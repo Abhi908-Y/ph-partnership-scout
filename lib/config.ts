@@ -1,5 +1,7 @@
 export const WINDOW_DAYS = 7;
 export const MAKER_COMMENT_WEIGHT = 5;
+// Launches Gemini rates below this partnership fit stay on the dashboard but skip the Telegram digest.
+export const MIN_ALERT_FIT = 5;
 
 export const MY_PRODUCT =
   process.env.MY_PRODUCT_DESCRIPTION ??

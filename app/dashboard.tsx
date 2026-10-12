@@ -168,7 +168,7 @@ function Row({
 }) {
   const [draft, setDraft] = useState(note);
   const [saveState, setSaveState] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState("");
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => setDraft(note), [note]);
@@ -189,9 +189,23 @@ function Row({
   }
 
   async function copyAngle() {
-    await navigator.clipboard.writeText(l.outreachAngle);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1600);
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(l.outreachAngle);
+      ok = true;
+    } catch {
+      // Clipboard API blocked (permissions, iframe, http): fall back to a hidden textarea.
+      const ta = document.createElement("textarea");
+      ta.value = l.outreachAngle;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      ok = document.execCommand("copy");
+      ta.remove();
+    }
+    setCopied(ok ? "Copied" : "Couldn't copy. Select the text instead.");
+    setTimeout(() => setCopied(""), 1800);
   }
 
   const founder = l.makers.length ? l.makers.join(", ") : null;
@@ -228,7 +242,7 @@ function Row({
             {l.outreachAngle ? (
               <>
                 <p className="angle">{l.outreachAngle}</p>
-                <button className="btn btn-quiet" onClick={copyAngle}>{copied ? "Copied" : "Copy angle"}</button>
+                <button className="btn btn-quiet" onClick={copyAngle}>{copied || "Copy angle"}</button>
               </>
             ) : (
               <p className="one">Gemini hasn't analyzed this launch yet. It will be picked up on the next scan.</p>

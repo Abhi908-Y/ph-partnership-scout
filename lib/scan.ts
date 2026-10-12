@@ -1,4 +1,4 @@
-import { MAKER_COMMENT_WEIGHT, WINDOW_DAYS } from "./config";
+import { MAKER_COMMENT_WEIGHT, MIN_ALERT_FIT, WINDOW_DAYS } from "./config";
 import { analyzeLaunches } from "./gemini";
 import { fetchRecentLaunches } from "./producthunt";
 import { getLastScan, getLaunches, removeLaunches, saveLaunches, setLastScan } from "./store";
@@ -6,9 +6,9 @@ import { sendDigest } from "./telegram";
 import { CATEGORIES, type Category, type Launch, type RawPost } from "./types";
 
 const MIN_INTERVAL_MS = 3 * 60_000;
-const MAX_ANALYZE_PER_SCAN = 40;
+const MAX_ANALYZE_PER_SCAN = 80;
 const BATCH = 8;
-const PARALLEL = 3;
+const PARALLEL = 4;
 
 export function scoreOf(p: RawPost) {
   return p.makerComments !== null ? p.votes + MAKER_COMMENT_WEIGHT * p.makerComments : p.votes + p.commentsCount;
@@ -89,9 +89,9 @@ export async function runScan({ force }: { force: boolean }): Promise<ScanResult
     }
   }
 
-  // One Telegram digest for relevant launches not yet alerted.
+  // One Telegram digest for relevant launches (fit >= MIN_ALERT_FIT) not yet alerted.
   const toAlert = [...all.values()]
-    .filter((l) => l.analyzedAt && !l.alertedAt && isCategory(l.category))
+    .filter((l) => l.analyzedAt && !l.alertedAt && isCategory(l.category) && l.relevance >= MIN_ALERT_FIT)
     .sort((a, b) => b.score - a.score);
   let alerted = 0;
   if (toAlert.length && (await sendDigest(toAlert))) {

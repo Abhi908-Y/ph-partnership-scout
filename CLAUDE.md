@@ -15,7 +15,7 @@ Exam project (MESA Cohort C4, Case 4). Kavya leads partnerships at an async-stan
 - Alerts: Telegram Bot API (`lib/telegram.ts`), one digest per scan.
 
 ## Flow
-`/api/scan` → `lib/scan.ts`: fetch PH (`lib/producthunt.ts`) → merge with Neon → score → drop launches older than 7 days → Gemini analysis (`lib/gemini.ts`, max 40 per scan, batches of 8) → Telegram digest → save.
+`/api/scan` → `lib/scan.ts`: fetch PH (`lib/producthunt.ts`) → merge with Neon → score → drop launches older than 7 days → Gemini analysis (`lib/gemini.ts`, max 80 per scan, batches of 8, 4 in parallel) → Telegram digest (fit ≥ 5 only) → save.
 Dashboard `app/dashboard.tsx` (client, wrapped by `app/page.tsx`) reads `/api/launches`, saves notes via `PUT /api/notes`.
 
 ## Scoring
