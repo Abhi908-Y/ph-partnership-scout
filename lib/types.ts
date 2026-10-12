@@ -62,10 +62,8 @@ export interface FounderContact {
   name: string;
   role: string;
   email?: string;
-  /** Hunter confidence 0-100. */
-  emailScore?: number;
-  /** Hunter verification: valid | accept_all | unknown. */
-  emailStatus?: string;
+  /** "personal" = the founder's own address; "company" = a public contact address of the company. */
+  emailKind?: "personal" | "company";
   linkedin?: string;
   /** True when `linkedin` is a LinkedIn people-search link rather than a known profile. */
   linkedinIsSearch?: boolean;
@@ -85,7 +83,8 @@ export interface ContactsRecord {
 
 /** What the dashboard needs to know about outreach setup (no secrets). */
 export interface OutreachConfig {
-  hunter: boolean;
+  /** Web search for LinkedIn/email is available (OPENROUTER_API_KEY set). */
+  search: boolean;
   resend: boolean;
   /** When set, every email is delivered to this address instead of the founder. */
   testTo: string | null;

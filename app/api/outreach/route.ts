@@ -3,7 +3,7 @@ import { draftOutreach, findContacts, outreachConfig, sendOutreachEmail } from "
 import { bumpEmailCount, getContacts, getLaunch, getStatuses, saveContacts, saveStatus } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const fail = (error: string, status = 400) => NextResponse.json({ error }, { status });
 

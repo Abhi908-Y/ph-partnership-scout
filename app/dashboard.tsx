@@ -686,12 +686,12 @@ function ReachOut({
           {l.makers.length ? (
             <>
               <button className="btn" onClick={() => call("find")} disabled={!!busy || !config}>
-                {busy.startsWith("find") ? "Looking up founders…" : "Find emails & LinkedIn"}
+                {busy.startsWith("find") ? "Searching the web…" : "Find LinkedIn & email"}
               </button>
               <span className="muted-text small">
-                {config && !config.hunter
-                  ? "Email lookup needs HUNTER_API_KEY. LinkedIn links and notes work now."
-                  : "Uses Hunter to find each founder's work email."}
+                {config && !config.search
+                  ? "Web search needs OPENROUTER_API_KEY. LinkedIn search links and drafts work now."
+                  : "Gemini searches the web for each founder's LinkedIn profile and any public email."}
               </span>
             </>
           ) : (
@@ -717,7 +717,7 @@ function ReachOut({
         </ul>
       )}
 
-      {contacts && config?.hunter && (
+      {contacts && config?.search && (
         <button className="link-btn" onClick={() => call("find")} disabled={!!busy}>
           {busy.startsWith("find") ? "Looking up again…" : "Look up again"}
         </button>
@@ -771,9 +771,9 @@ function FounderCard({
     setNote(f.draft?.linkedinNote ?? "");
   }, [f.draft?.subject, f.draft?.body, f.draft?.linkedinNote]);
 
-  const emailLabel =
-    f.emailStatus === "valid" ? "verified" : typeof f.emailScore === "number" ? `${f.emailScore}% likely` : null;
-  const canEmail = !!f.email && !!config?.resend;
+  const emailLabel = f.emailKind === "company" ? "company email" : null;
+  // In test mode every email goes to the test inbox, so a draft can be sent even without a founder email.
+  const canEmail = !!config?.resend && (!!f.email || !!config?.testTo);
 
   async function copyAndOpen() {
     const ok = await copy(note);
@@ -802,7 +802,7 @@ function FounderCard({
               {emailLabel && <span className="muted-text"> · {emailLabel}</span>}
             </>
           ) : (
-            <span className="muted-text">{f.note ?? "No email found."}</span>
+            <span className="muted-text">{f.note ?? "No email ID found"}</span>
           )}
         </span>
         <span>
@@ -822,14 +822,14 @@ function FounderCard({
           className="mini-btn"
           onClick={() => onOpen("email")}
           disabled={!canEmail || !!busy}
-          title={!f.email ? "No email for this founder" : !config?.resend ? "Add RESEND_API_KEY to send email" : undefined}
+          title={!config?.resend ? "Add RESEND_API_KEY to send email" : !canEmail ? "No email for this founder" : undefined}
         >
           ✉ {f.sentAt ? "Email again" : "Write email"}
         </button>
         <button className="mini-btn" onClick={() => onOpen("linkedin")} disabled={!!busy}>
           in · LinkedIn request
         </button>
-        {!config?.resend && f.email && <span className="muted-text small">Sending email needs RESEND_API_KEY.</span>}
+        {!config?.resend && <span className="muted-text small">Sending email needs RESEND_API_KEY.</span>}
       </div>
 
       {composer && (
@@ -840,7 +840,10 @@ function FounderCard({
             <>
               <label>
                 To
-                <input value={config?.testTo ? `${config.testTo} (test, instead of ${f.email})` : f.email ?? ""} readOnly />
+                <input
+                  value={config?.testTo ? `${config.testTo} (test, instead of ${f.email ?? "the founder"})` : f.email ?? ""}
+                  readOnly
+                />
               </label>
               <label>
                 Subject

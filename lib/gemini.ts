@@ -1,4 +1,5 @@
 import { MY_PRODUCT } from "./config";
+import { chatJson } from "./llm";
 import { CATEGORIES, type RawPost } from "./types";
 
 export interface Analysis {
@@ -11,47 +12,28 @@ export interface Analysis {
 }
 
 const ANALYSIS_SCHEMA = {
-  type: "ARRAY",
-  items: {
-    type: "OBJECT",
-    properties: {
-      id: { type: "STRING" },
-      category: { type: "STRING", enum: [...CATEGORIES, "Not relevant"] },
-      relevance: { type: "INTEGER" },
-      oneLiner: { type: "STRING" },
-      summary: { type: "STRING" },
-      outreachAngle: { type: "STRING" },
+  type: "object",
+  properties: {
+    launches: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          category: { type: "string", enum: [...CATEGORIES, "Not relevant"] },
+          relevance: { type: "integer" },
+          oneLiner: { type: "string" },
+          summary: { type: "string" },
+          outreachAngle: { type: "string" },
+        },
+        required: ["id", "category", "relevance", "oneLiner", "summary", "outreachAngle"],
+        additionalProperties: false,
+      },
     },
-    required: ["id", "category", "relevance", "oneLiner", "summary", "outreachAngle"],
   },
+  required: ["launches"],
+  additionalProperties: false,
 };
-
-/** Calls Gemini Flash with a JSON response schema and returns the parsed JSON. */
-export async function geminiJson<T>(prompt: string, schema: object): Promise<T> {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error("GEMINI_API_KEY is not set.");
-  const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
-  // Gemini 3.x: keep the default temperature and use a low thinking level so calls stay fast.
-  // Older 2.5 models don't accept thinkingLevel.
-  const modelConfig = model.startsWith("gemini-3")
-    ? { thinkingConfig: { thinkingLevel: "low" } }
-    : { temperature: 0.4 };
-
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: { ...modelConfig, responseMimeType: "application/json", responseSchema: schema },
-    }),
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`Gemini ${res.status}: ${JSON.stringify(json).slice(0, 300)}`);
-
-  const text: string =
-    json?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
-  return JSON.parse(text.replace(/```json|```/g, "").trim()) as T;
-}
 
 export async function analyzeLaunches(posts: RawPost[]): Promise<Analysis[]> {
   const input = posts.map((p) => ({
@@ -78,6 +60,6 @@ For each Product Hunt launch below, return:
 Launches:
 ${JSON.stringify(input)}`;
 
-  const parsed = await geminiJson<Analysis[]>(prompt, ANALYSIS_SCHEMA);
-  return Array.isArray(parsed) ? parsed : [];
+  const parsed = await chatJson<{ launches: Analysis[] }>(prompt, "launch_analysis", ANALYSIS_SCHEMA);
+  return Array.isArray(parsed?.launches) ? parsed.launches : [];
 }
