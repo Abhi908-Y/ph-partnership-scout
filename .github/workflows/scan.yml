@@ -10,7 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger scan
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          curl -fsS -X POST "${{ secrets.APP_URL }}/api/scan" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::error::Add the APP_URL and CRON_SECRET repository secrets (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+          curl -sS --fail-with-body -X POST "${APP_URL%/}/api/scan" \
+            -H "Authorization: Bearer $CRON_SECRET" \
             --max-time 150
