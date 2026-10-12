@@ -1,7 +1,8 @@
-import { MAKER_COMMENT_WEIGHT, MIN_ALERT_FIT, WINDOW_DAYS } from "./config";
+import { WINDOW_DAYS } from "./config";
 import { analyzeLaunches } from "./gemini";
 import { fetchRecentLaunches } from "./producthunt";
-import { getLastScan, getLaunches, removeLaunches, saveLaunches, setLastScan } from "./store";
+import { scoreWith, type Rubric } from "./rubric";
+import { getLastScan, getLaunches, getRubric, removeLaunches, saveLaunches, setLastScan } from "./store";
 import { sendDigest } from "./telegram";
 import { CATEGORIES, type Category, type Launch, type RawPost } from "./types";
 
@@ -10,8 +11,9 @@ const MAX_ANALYZE_PER_SCAN = 80;
 const BATCH = 8;
 const PARALLEL = 4;
 
-export function scoreOf(p: RawPost) {
-  return p.makerComments !== null ? p.votes + MAKER_COMMENT_WEIGHT * p.makerComments : p.votes + p.commentsCount;
+/** Ranking score under the dashboard-editable rubric (default: upvotes + 5 × maker replies). */
+export function scoreOf(p: RawPost & { relevance?: number; analyzedAt?: string }, rubric: Rubric) {
+  return scoreWith(p, rubric);
 }
 
 const daysSince = (iso: string) => (Date.now() - Date.parse(iso)) / 86_400_000;
@@ -38,13 +40,14 @@ export async function runScan({ force }: { force: boolean }): Promise<ScanResult
   const startedAt = new Date().toISOString();
   await setLastScan(startedAt);
 
+  const rubric = await getRubric();
   const { posts, errors } = await fetchRecentLaunches();
   const all = new Map<string, Launch>(Object.entries(await getLaunches()));
   let newCount = 0;
 
   for (const p of posts) {
     const prev = all.get(p.id);
-    const fresh = { ...p, score: scoreOf(p), scoreBasis: p.makerComments === null ? ("all" as const) : ("maker" as const) };
+    const fresh = { ...p, score: scoreOf({ ...prev, ...p }, rubric), scoreBasis: p.makerComments === null ? ("all" as const) : ("maker" as const) };
     if (prev) {
       all.set(p.id, { ...prev, ...fresh });
     } else {
@@ -57,18 +60,19 @@ export async function runScan({ force }: { force: boolean }): Promise<ScanResult
   const expired = [...all.values()].filter((l) => daysSince(l.launchedAt) >= WINDOW_DAYS).map((l) => l.id);
   expired.forEach((id) => all.delete(id));
 
-  // Analyze unprocessed launches with Gemini, highest score first.
+  // Analyze with Gemini: new launches first, then ones scored under an older rubric (or before
+  // summaries existed), highest score first within each group.
+  const stale = (l: Launch) => !l.summary || (l.rubricVersion ?? 1) !== rubric.version;
   const pending = [...all.values()]
-    // Launches analyzed before summaries existed are re-analyzed once to get one.
-    .filter((l) => !l.analyzedAt || !l.summary)
-    .sort((a, b) => b.score - a.score)
+    .filter((l) => !l.analyzedAt || stale(l))
+    .sort((a, b) => Number(!!a.analyzedAt) - Number(!!b.analyzedAt) || b.score - a.score)
     .slice(0, MAX_ANALYZE_PER_SCAN);
   const batches: Launch[][] = [];
   for (let i = 0; i < pending.length; i += BATCH) batches.push(pending.slice(i, i + BATCH));
 
   let analyzed = 0;
   for (let i = 0; i < batches.length; i += PARALLEL) {
-    const results = await Promise.allSettled(batches.slice(i, i + PARALLEL).map((b) => analyzeLaunches(b)));
+    const results = await Promise.allSettled(batches.slice(i, i + PARALLEL).map((b) => analyzeLaunches(b, rubric)));
     for (const r of results) {
       if (r.status === "rejected") {
         errors.push(`gemini: ${(r.reason as Error).message}`);
@@ -77,10 +81,13 @@ export async function runScan({ force }: { force: boolean }): Promise<ScanResult
       for (const a of r.value) {
         const l = all.get(String(a.id));
         if (!l) continue;
+        const relevance = Math.max(0, Math.min(10, Number(a.relevance) || 0));
         all.set(l.id, {
           ...l,
           category: isCategory(a.category) ? a.category : "Not relevant",
-          relevance: Math.max(0, Math.min(10, Number(a.relevance) || 0)),
+          relevance,
+          score: scoreOf({ ...l, relevance, analyzedAt: startedAt }, rubric),
+          rubricVersion: rubric.version,
           oneLiner: a.oneLiner || l.tagline,
           summary: a.summary || undefined,
           outreachAngle: a.outreachAngle || "",
@@ -91,9 +98,9 @@ export async function runScan({ force }: { force: boolean }): Promise<ScanResult
     }
   }
 
-  // One Telegram digest for relevant launches (fit >= MIN_ALERT_FIT) not yet alerted.
+  // One Telegram digest for relevant launches (fit >= the rubric's threshold) not yet alerted.
   const toAlert = [...all.values()]
-    .filter((l) => l.analyzedAt && !l.alertedAt && isCategory(l.category) && l.relevance >= MIN_ALERT_FIT)
+    .filter((l) => l.analyzedAt && !l.alertedAt && isCategory(l.category) && l.relevance >= rubric.minAlertFit)
     .sort((a, b) => b.score - a.score);
   let alerted = 0;
   if (toAlert.length && (await sendDigest(toAlert))) {

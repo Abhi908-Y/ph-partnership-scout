@@ -245,3 +245,19 @@ a { color: var(--ink); }
 .link-btn { justify-self: start; background: none; border: 0; padding: 0; font-size: 12.5px; text-decoration: underline; color: var(--ink2); }
 .reach-error { margin: 0; font-size: 13px; color: var(--hot); }
 .reach-info { margin: 0; font-size: 13px; color: var(--ok); font-weight: 600; }
+
+/* Scoring rubric */
+.btn.light { background: #fff; color: var(--ink); box-shadow: 2px 2px 0 var(--ink); }
+.score-why { margin: -6px 0 0; font-size: 12.5px; color: var(--ink2); line-height: 1.6; }
+.rubric h2 { margin: 0 0 4px; font-size: 22px; letter-spacing: -0.02em; }
+.rubric section { display: grid; gap: 8px; }
+.weights { display: grid; gap: 8px; }
+.weight { display: grid; grid-template-columns: minmax(0, 1fr) auto 90px; gap: 10px; align-items: center; border: 1.4px solid var(--ink); border-radius: 10px; padding: 8px 10px; background: #fff; }
+.weight b { display: block; font-size: 13.5px; }
+.weight small { display: block; font-size: 12px; color: var(--ink3); }
+.weight .times { font-weight: 700; color: var(--ink2); }
+.weight input, .band textarea { border: 1.4px solid var(--ink); border-radius: 8px; padding: 6px 8px; background: #fff; font-size: 13.5px; width: 100%; }
+.bands { display: grid; gap: 8px; }
+.band { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 10px; align-items: start; }
+.band-range { font-weight: 700; font-size: 13px; border: 1.4px solid var(--ink); border-radius: 8px; background: var(--hl-soft); text-align: center; padding: 6px 0; }
+.band textarea { resize: vertical; }

@@ -46,6 +46,8 @@ export interface Launch extends RawPost {
   scoreBasis: "maker" | "all";
   firstSeenAt: string;
   analyzedAt?: string;
+  /** Rubric version Gemini used for category/fit; a newer rubric triggers re-scoring. */
+  rubricVersion?: number;
   alertedAt?: string;
 }
 

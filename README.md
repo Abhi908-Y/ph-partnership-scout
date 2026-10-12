@@ -11,7 +11,7 @@ Each launch shows: product name, founder, one-line description, upvotes, maker r
 | 1 | Data source | Product Hunt GraphQL API v2 (`lib/producthunt.ts`) | Pulls the top 20 posts per topic from the last 7 days: upvotes, comments, maker replies, makers, launch date |
 | 2 | Scheduler | GitHub Actions cron (`.github/workflows/scan.yml`) | Calls `POST /api/scan` every 30 min. Vercel Hobby cron only allows one run per day, so GitHub is used instead |
 | 3 | Scan pipeline | Next.js route `app/api/scan` (requires `CRON_SECRET`), `scanNow` server action (`app/actions.ts`), `lib/scan.ts` | Merges new data, scores, drops launches older than 7 days, sends new launches to Gemini, triggers the alert |
-| 4 | Scoring | `lib/scan.ts` | `score = upvotes + 5 × maker replies`. Falls back to `upvotes + total comments` when every maker name is redacted |
+| 4 | Scoring | `lib/rubric.ts`, editable in the dashboard (⚖ Scoring rubric) | Default `score = 1 × upvotes + 5 × maker replies` (falls back to `1 × total comments` when every maker is hidden), optional `× Gemini fit`. The weights, Gemini's 0–10 fit rubric and the Telegram threshold are stored in Neon and can be changed on the website without code changes |
 | 5 | AI analysis | Gemini Flash via the OpenRouter REST API (`lib/llm.ts`, `lib/gemini.ts`), pinned to Google's infrastructure | Classifies into the 4 categories or "Not relevant", rates fit 0–10, writes the one-liner, a 2-sentence summary and the outreach angle (structured JSON output) |
 | 6 | Storage | Neon Postgres (`lib/store.ts`, `schema.sql`) | Tables `launches` (JSONB per launch), `notes`, `statuses` (outreach status per launch), `meta` (last scan time). Created automatically on first request |
 | 7 | Alerts | Telegram Bot API (`lib/telegram.ts`) | One digest per scan listing new relevant launches with fit ≥ 5/10, with a link to the dashboard |
@@ -45,6 +45,16 @@ Add these to `.env.local` and Vercel to turn it on. Founder lookup uses the same
 - For real sending: verify a domain in Resend, set `OUTREACH_FROM="Kavya <kavya@yourcompany.com>"`, and remove `OUTREACH_TEST_TO`. Commercial email rules (CAN-SPAM, GDPR) apply: send one-to-one, be honest about who you are, and honour opt-outs.
 
 Safeguards: at most one email per founder unless you click "Email again", and at most 25 emails a day.
+
+## Scoring rubric
+
+The assignment says to score launches "by upvote count and number of maker comments (a signal of how responsive the team is)". It gives no weights, so they are editable on the dashboard under **⚖ Scoring rubric** (top right):
+
+- **Ranking weights**: upvotes (default 1), maker replies (default 5), all comments when makers are hidden (default 1), Gemini fit (default 0, i.e. not part of the ranking). Saving re-ranks the list immediately.
+- **Gemini fit rubric**: the descriptions for the 9–10, 6–8, 3–5 and 0–2 bands that Gemini uses to rate partnership fit. Saving a change makes Gemini re-score every launch over the next scans (about 80 per scan).
+- **Telegram threshold**: minimum fit for a launch to be included in the digest (default 5).
+
+Each launch's pop-up shows how its score was calculated and which fit band it falls in.
 
 ## Notes and limits
 

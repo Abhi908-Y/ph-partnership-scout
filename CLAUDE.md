@@ -19,7 +19,7 @@ Exam project (MESA Cohort C4, Case 4). Kavya leads partnerships at an async-stan
 Dashboard `app/dashboard.tsx` (client, wrapped by `app/page.tsx`; sketchbook theme in `app/globals.css`, Inter via next/font) reads `/api/launches`, saves notes via `PUT /api/notes` and outreach status via `PUT /api/status`.
 
 ## Scoring
-`score = votes + 5 × makerComments`, where makerComments is Product Hunt's `makerReplies` field (one cheap query per topic, no comment fetching). If PH redacts every maker name (`[REDACTED]`, id 0), makerComments is null, the founder shows as "see Product Hunt page", and the score falls back to `votes + commentsCount` with `scoreBasis: "all"`.
+Rubric lives in `lib/rubric.ts` (defaults) and Neon `meta` key `rubric`, edited via the dashboard and `PUT /api/rubric`. Default `score = 1 × upvotes + 5 × makerComments` (makerComments = PH `makerReplies`); if PH redacts every maker name, makerComments is null, the founder shows as "see Product Hunt page", and the comments weight applies to `commentsCount` (`scoreBasis: "all"`). The dashboard re-ranks client-side with `scoreWith`. Changing fit-band text bumps `rubric.version`; scans re-analyze launches whose `rubricVersion` is older. Telegram uses `rubric.minAlertFit`.
 
 ## Known risks to verify early
 - PH redacts some maker names (verified Oct 2026: mixed per post). Handled.

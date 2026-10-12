@@ -1,4 +1,5 @@
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
+import { normalizeRubric, type Rubric } from "./rubric";
 import type { ContactsRecord, Launch, OutreachStatus } from "./types";
 
 let client: NeonQueryFunction<false, false> | null = null;
@@ -112,6 +113,24 @@ export async function bumpEmailCount(): Promise<number> {
     [key]
   );
   return Number(rows[0]?.value ?? 1);
+}
+
+export async function getRubric(): Promise<Rubric> {
+  const rows = await sql(`SELECT value FROM meta WHERE key = 'rubric'`);
+  let stored: unknown = null;
+  try {
+    stored = rows[0] ? JSON.parse(String(rows[0].value)) : null;
+  } catch {
+    // Corrupt value: fall back to defaults.
+  }
+  return normalizeRubric(stored);
+}
+
+export async function saveRubric(r: Rubric) {
+  await sql(
+    `INSERT INTO meta (key, value) VALUES ('rubric', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+    [JSON.stringify(r)]
+  );
 }
 
 export async function getLastScan(): Promise<string | null> {

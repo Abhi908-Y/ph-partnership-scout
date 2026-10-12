@@ -10,6 +10,7 @@ import {
   type OutreachConfig,
   type OutreachStatus,
 } from "@/lib/types";
+import { bandFor, DEFAULT_RUBRIC, scoreBreakdown, scoreWith, type Rubric } from "@/lib/rubric";
 import { roleOf } from "@/lib/roles";
 import { scanNow } from "./actions";
 
@@ -100,6 +101,8 @@ export default function Dashboard() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
+  const [rubric, setRubric] = useState<Rubric>(DEFAULT_RUBRIC);
+  const [rubricOpen, setRubricOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -110,6 +113,7 @@ export default function Dashboard() {
       setNotes(data.notes);
       setStatuses(data.statuses ?? {});
       setLastScan(data.lastScan);
+      if (data.rubric) setRubric(data.rubric);
     } catch (err) {
       setMessage(`Couldn't load launches: ${(err as Error).message}`);
     } finally {
@@ -177,11 +181,15 @@ export default function Dashboard() {
 
   const viewPool = useMemo(() => launches.filter((l) => inView(l, view)), [launches, view, inView]);
   const q = query.trim().toLowerCase();
-  const visible = viewPool.filter(
-    (l) =>
-      (cat === "All" || l.category === cat) &&
-      (!q || `${l.name} ${l.oneLiner} ${l.tagline} ${l.makers.join(" ")}`.toLowerCase().includes(q))
-  );
+  const visible = viewPool
+    .filter(
+      (l) =>
+        (cat === "All" || l.category === cat) &&
+        (!q || `${l.name} ${l.oneLiner} ${l.tagline} ${l.makers.join(" ")}`.toLowerCase().includes(q))
+    )
+    .map((l) => ({ l, score: scoreWith(l, rubric) }))
+    .sort((a, b) => b.score - a.score)
+    .map((x) => x.l);
   const opened = launches.find((l) => l.id === openId) ?? null;
   const catCount = (c: Category | "All") => (c === "All" ? viewPool.length : viewPool.filter((l) => l.category === c).length);
   const viewMeta = VIEWS.find((v) => v.id === view)!;
@@ -239,6 +247,9 @@ export default function Dashboard() {
                 aria-label="Search launches"
               />
             </label>
+            <button className="btn light" onClick={() => setRubricOpen(true)}>
+              ⚖ Scoring rubric
+            </button>
             <button className="btn" onClick={scan} disabled={scanning}>
               {scanning ? "Scanning…" : "↻ Scan now"}
             </button>
@@ -260,7 +271,7 @@ export default function Dashboard() {
             </button>
           ))}
           <span className="hint">
-            ranked by upvotes + 5 × maker replies
+            ranked by {formulaText(rubric)}
             <svg width="30" height="18" viewBox="0 0 34 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
               <path d="M2 4c10 0 20 4 26 12" />
               <path d="M22 15l6 2 1-6" />
@@ -315,6 +326,23 @@ export default function Dashboard() {
             setStatuses((s) => ((s[opened.id] ?? "new") === "new" ? { ...s, [opened.id]: "contacted" } : s))
           }
           onClose={() => setOpenId(null)}
+          rubric={rubric}
+        />
+      )}
+
+      {rubricOpen && (
+        <RubricDialog
+          rubric={rubric}
+          sample={visible[0] ?? null}
+          onSaved={(r, rescoring) => {
+            setRubric(r);
+            setMessage(
+              rescoring
+                ? "Rubric saved. The list is re-ranked, and Gemini will re-score every launch's fit over the next scans (about 80 per scan)."
+                : "Rubric saved. The list is re-ranked with the new weights."
+            );
+          }}
+          onClose={() => setRubricOpen(false)}
         />
       )}
     </div>
@@ -427,6 +455,7 @@ function LaunchDialog({
   onNoteSaved,
   onContacted,
   onClose,
+  rubric,
 }: {
   launch: Launch;
   status: OutreachStatus;
@@ -435,6 +464,7 @@ function LaunchDialog({
   onNoteSaved: (n: string) => void;
   onContacted: () => void;
   onClose: () => void;
+  rubric: Rubric;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [draft, setDraft] = useState(note);
@@ -444,6 +474,8 @@ function LaunchDialog({
   const r = replies(l);
   const founders = foundersOf(l);
   const summary = l.summary || l.description || l.tagline;
+  const breakdown = scoreBreakdown(l, rubric);
+  const band = l.analyzedAt ? bandFor(l.relevance, rubric) : undefined;
 
   useEffect(() => {
     const dialog = ref.current;
@@ -549,10 +581,26 @@ function LaunchDialog({
             <span>{r.label}</span>
           </div>
           <div>
-            <b>{l.score}</b>
+            <b>{breakdown.total}</b>
             <span>score</span>
           </div>
         </div>
+        <p className="score-why">
+          <b>How it&apos;s scored:</b>{" "}
+          {breakdown.parts.map((p, i) => (
+            <span key={p.label}>
+              {i > 0 && " + "}
+              {p.count} {p.label} × {p.weight}
+            </span>
+          ))}{" "}
+          = <b>{breakdown.total}</b>
+          {band && (
+            <>
+              <br />
+              <b>Fit {l.relevance}/10:</b> {band.description}
+            </>
+          )}
+        </p>
 
         <WindowBar launchedAt={l.launchedAt} />
 
@@ -896,5 +944,179 @@ function FounderCard({
         </div>
       )}
     </li>
+  );
+}
+
+function formulaText(r: Rubric) {
+  const terms = [
+    r.weights.upvotes ? `${r.weights.upvotes === 1 ? "" : `${r.weights.upvotes} × `}upvotes` : "",
+    r.weights.makerReplies ? `${r.weights.makerReplies} × maker replies` : "",
+    r.weights.fit ? `${r.weights.fit} × Gemini fit` : "",
+  ].filter(Boolean);
+  return terms.join(" + ") || "nothing (all weights are 0)";
+}
+
+function RubricDialog({
+  rubric,
+  sample,
+  onSaved,
+  onClose,
+}: {
+  rubric: Rubric;
+  sample: Launch | null;
+  onSaved: (r: Rubric, rescoring: boolean) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [draft, setDraft] = useState<Rubric>(rubric);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const dialog = ref.current;
+    if (dialog && !dialog.open) dialog.showModal();
+  }, []);
+
+  const setWeight = (k: keyof Rubric["weights"], v: string) =>
+    setDraft((d) => ({ ...d, weights: { ...d.weights, [k]: v === "" ? 0 : Number(v) } }));
+  const setBand = (i: number, v: string) =>
+    setDraft((d) => ({ ...d, fitBands: d.fitBands.map((b, j) => (j === i ? { ...b, description: v } : b)) }));
+  const bandsChanged = draft.fitBands.some((b, i) => b.description.trim() !== rubric.fitBands[i]?.description);
+  const example = sample ? scoreBreakdown(sample, draft) : null;
+
+  async function save() {
+    setSaving(true);
+    setError("");
+    const res = await fetch("/api/rubric", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draft),
+    }).catch(() => null);
+    const data = await res?.json().catch(() => ({}));
+    setSaving(false);
+    if (!res?.ok) return setError(data?.error ?? "Couldn't save the rubric. Check your connection and try again.");
+    onSaved(data.rubric, !!data.rescoring);
+    ref.current?.close();
+  }
+
+  const weightField = (k: keyof Rubric["weights"], label: string, hint: string) => (
+    <label className="weight">
+      <span>
+        <b>{label}</b>
+        <small>{hint}</small>
+      </span>
+      <span className="times">×</span>
+      <input type="number" min={0} max={k === "fit" ? 1000 : 100} step={0.5} value={draft.weights[k]} onChange={(e) => setWeight(k, e.target.value)} />
+    </label>
+  );
+
+  return (
+    <dialog
+      ref={ref}
+      className="dialog sk"
+      aria-labelledby="rubric-title"
+      onClose={onClose}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) ref.current?.close();
+      }}
+    >
+      <div className="dialog-body rubric">
+        <button className="close" onClick={() => ref.current?.close()} aria-label="Close">
+          ✕
+        </button>
+        <div>
+          <h2 id="rubric-title">Scoring rubric</h2>
+          <p className="muted-text">
+            How launches are ranked and how Gemini rates partnership fit. Changes apply to everyone using this dashboard.
+          </p>
+        </div>
+
+        <section>
+          <h3>Ranking score</h3>
+          <p className="muted-text small">
+            The assignment asks to score by upvotes and maker comments (how responsive the team is). The weights are
+            ours to choose.
+          </p>
+          <div className="weights">
+            {weightField("upvotes", "Upvotes", "per upvote")}
+            {weightField("makerReplies", "Maker replies", "per comment written by the makers")}
+            {weightField("comments", "All comments", "used only when Product Hunt hides every maker")}
+            {weightField("fit", "Gemini fit (0–10)", "optional: add partnership fit to the ranking")}
+          </div>
+          {example && sample && (
+            <p className="score-why">
+              <b>Example, {sample.name}:</b>{" "}
+              {example.parts.map((p, i) => (
+                <span key={p.label}>
+                  {i > 0 && " + "}
+                  {p.count} × {p.weight}
+                </span>
+              ))}{" "}
+              = <b>{example.total}</b>
+            </p>
+          )}
+        </section>
+
+        <section>
+          <h3>Gemini fit rubric (0–10)</h3>
+          <p className="muted-text small">
+            Gemini uses these descriptions to rate each launch. Editing them makes Gemini re-score every launch over the
+            next scans (about 80 per scan).
+          </p>
+          <div className="bands">
+            {draft.fitBands.map((b, i) => (
+              <label key={b.min} className="band">
+                <span className="band-range">
+                  {b.min}–{b.max}
+                </span>
+                <textarea rows={2} value={b.description} maxLength={400} onChange={(e) => setBand(i, e.target.value)} />
+              </label>
+            ))}
+          </div>
+          {bandsChanged && <p className="test-banner">Saving will re-score every launch&apos;s fit with Gemini.</p>}
+        </section>
+
+        <section>
+          <h3>Telegram alerts</h3>
+          <label className="weight">
+            <span>
+              <b>Minimum fit to alert</b>
+              <small>launches below this stay on the dashboard but skip the Telegram digest</small>
+            </span>
+            <span className="times">≥</span>
+            <input
+              type="number"
+              min={0}
+              max={10}
+              step={1}
+              value={draft.minAlertFit}
+              onChange={(e) => setDraft((d) => ({ ...d, minAlertFit: Number(e.target.value) }))}
+            />
+          </label>
+        </section>
+
+        {error && (
+          <p className="reach-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="composer-actions">
+          <button className="btn" onClick={save} disabled={saving}>
+            {saving ? "Saving…" : "Save rubric"}
+          </button>
+          <button className="mini-btn" onClick={() => setDraft({ ...DEFAULT_RUBRIC, version: rubric.version })} disabled={saving}>
+            Reset to defaults
+          </button>
+          <button className="mini-btn" onClick={() => ref.current?.close()}>
+            Cancel
+          </button>
+          {rubric.updatedAt && (
+            <span className="muted-text small">
+              Last changed {new Date(rubric.updatedAt).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+            </span>
+          )}
+        </div>
+      </div>
+    </dialog>
   );
 }
