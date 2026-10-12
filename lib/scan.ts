@@ -2,7 +2,16 @@ import { WINDOW_DAYS } from "./config";
 import { analyzeLaunches } from "./gemini";
 import { fetchRecentLaunches } from "./producthunt";
 import { scoreWith, type Rubric } from "./rubric";
-import { getLastScan, getLaunches, getRubric, removeLaunches, saveLaunches, setLastScan } from "./store";
+import {
+  acquireScanLock,
+  getLastScan,
+  getLaunches,
+  getRubric,
+  releaseScanLock,
+  removeLaunches,
+  saveLaunches,
+  setLastScan,
+} from "./store";
 import { sendDigest } from "./telegram";
 import { CATEGORIES, type Category, type Launch, type RawPost } from "./types";
 
@@ -20,7 +29,7 @@ const daysSince = (iso: string) => (Date.now() - Date.parse(iso)) / 86_400_000;
 const isCategory = (c: string): c is Category => (CATEGORIES as readonly string[]).includes(c);
 
 export type ScanResult =
-  | { skipped: true; lastScan: string }
+  | { skipped: true; reason: "recent" | "running"; lastScan: string }
   | {
       skipped: false;
       lastScan: string;
@@ -35,8 +44,20 @@ export type ScanResult =
 export async function runScan({ force }: { force: boolean }): Promise<ScanResult> {
   const last = await getLastScan();
   if (!force && last && Date.now() - Date.parse(last) < MIN_INTERVAL_MS) {
-    return { skipped: true, lastScan: last };
+    return { skipped: true, reason: "recent", lastScan: last };
   }
+  // Only one scan at a time: the cron scan and a "Scan now" click could otherwise both send the
+  // same Telegram digest and pay for the same Gemini analysis twice.
+  const lock = await acquireScanLock();
+  if (!lock) return { skipped: true, reason: "running", lastScan: last ?? new Date().toISOString() };
+  try {
+    return await scanOnce();
+  } finally {
+    await releaseScanLock(lock).catch(() => {});
+  }
+}
+
+async function scanOnce(): Promise<ScanResult> {
   const startedAt = new Date().toISOString();
   await setLastScan(startedAt);
 

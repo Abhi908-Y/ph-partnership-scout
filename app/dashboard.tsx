@@ -131,7 +131,12 @@ export default function Dashboard() {
     try {
       const data = await scanNow();
       if ("error" in data) setMessage(`Scan failed: ${data.error}`);
-      else if (data.skipped) setMessage("A scan ran less than 3 minutes ago, so these results are current.");
+      else if (data.skipped)
+        setMessage(
+          data.reason === "running"
+            ? "A scan is already running. Its results will show here in about a minute."
+            : "A scan ran less than 3 minutes ago, so these results are current."
+        );
       else
         setMessage(
           `Scan finished: ${data.found} launches checked, ${data.newCount} new, ${data.analyzed} sorted by Gemini` +

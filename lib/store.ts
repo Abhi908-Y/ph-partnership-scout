@@ -133,6 +133,26 @@ export async function saveRubric(r: Rubric) {
   );
 }
 
+/**
+ * Takes the scan lock if it's free (or older than `staleSeconds`, in case a scan crashed). One atomic
+ * statement, so the cron scan and a "Scan now" click can't both get it. Returns a token for releasing it.
+ */
+export async function acquireScanLock(staleSeconds = 150): Promise<string | null> {
+  const token = new Date().toISOString();
+  const rows = await sql(
+    `INSERT INTO meta (key, value) VALUES ('scanLock', $1)
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+       WHERE meta.value::timestamptz < now() - make_interval(secs => $2)
+     RETURNING value`,
+    [token, staleSeconds]
+  );
+  return rows.length ? token : null;
+}
+
+export async function releaseScanLock(token: string) {
+  await sql(`DELETE FROM meta WHERE key = 'scanLock' AND value = $1`, [token]);
+}
+
 export async function getLastScan(): Promise<string | null> {
   const rows = await sql(`SELECT value FROM meta WHERE key = 'lastScan'`);
   return rows[0] ? String(rows[0].value) : null;
