@@ -23,10 +23,10 @@ const CAT_COLOR: Record<Category, string> = {
   "Team communication": "var(--team)",
 };
 const CAT_SHORT: Record<Category, string> = {
-  "Project management": "Project mgmt",
+  "Project management": "Project management",
   "HR tech": "HR tech",
-  "Developer productivity": "Dev productivity",
-  "Team communication": "Team comms",
+  "Developer productivity": "Developer productivity",
+  "Team communication": "Team communication",
 };
 
 const STATUS_LABEL: Record<OutreachStatus, string> = {
