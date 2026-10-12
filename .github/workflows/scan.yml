@@ -1,0 +1,16 @@
+name: Scan Product Hunt
+
+on:
+  schedule:
+    - cron: "*/30 * * * *" # every 30 minutes (GitHub may delay scheduled runs by a few minutes)
+  workflow_dispatch: {}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger scan
+        run: |
+          curl -fsS -X POST "${{ secrets.APP_URL }}/api/scan" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            --max-time 150
