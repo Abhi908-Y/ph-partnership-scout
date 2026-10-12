@@ -10,7 +10,7 @@ export interface Analysis {
   outreachAngle: string;
 }
 
-const SCHEMA = {
+const ANALYSIS_SCHEMA = {
   type: "ARRAY",
   items: {
     type: "OBJECT",
@@ -26,16 +26,34 @@ const SCHEMA = {
   },
 };
 
-export async function analyzeLaunches(posts: RawPost[]): Promise<Analysis[]> {
+/** Calls Gemini Flash with a JSON response schema and returns the parsed JSON. */
+export async function geminiJson<T>(prompt: string, schema: object): Promise<T> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY is not set.");
   const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
-  // Gemini 3.x: keep the default temperature and use a low thinking level so batches stay fast.
+  // Gemini 3.x: keep the default temperature and use a low thinking level so calls stay fast.
   // Older 2.5 models don't accept thinkingLevel.
   const modelConfig = model.startsWith("gemini-3")
     ? { thinkingConfig: { thinkingLevel: "low" } }
     : { temperature: 0.4 };
 
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: { ...modelConfig, responseMimeType: "application/json", responseSchema: schema },
+    }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`Gemini ${res.status}: ${JSON.stringify(json).slice(0, 300)}`);
+
+  const text: string =
+    json?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
+  return JSON.parse(text.replace(/```json|```/g, "").trim()) as T;
+}
+
+export async function analyzeLaunches(posts: RawPost[]): Promise<Analysis[]> {
   const input = posts.map((p) => ({
     id: p.id,
     name: p.name,
@@ -60,22 +78,6 @@ For each Product Hunt launch below, return:
 Launches:
 ${JSON.stringify(input)}`;
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { ...modelConfig, responseMimeType: "application/json", responseSchema: SCHEMA },
-      }),
-    }
-  );
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`Gemini ${res.status}: ${JSON.stringify(json).slice(0, 300)}`);
-
-  const text: string =
-    json?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "[]";
-  const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+  const parsed = await geminiJson<Analysis[]>(prompt, ANALYSIS_SCHEMA);
   return Array.isArray(parsed) ? parsed : [];
 }

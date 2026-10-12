@@ -212,3 +212,36 @@ a { color: var(--ink); }
   .dialog[open] { animation: rise .18s ease-out; }
   @keyframes rise { from { opacity: 0; transform: translateY(4px); } }
 }
+
+/* Reach out (inside the launch pop-up) */
+.reach { display: grid; gap: 10px; }
+.reach > h3 { margin-bottom: 0; }
+.test-banner { margin: 0; font-size: 12.5px; background: #dbeafe; border: 1.3px dashed var(--ink); border-radius: 8px; padding: 6px 10px; }
+.reach-empty { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.contacts { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.contact { border: 1.4px solid var(--ink); border-radius: 12px; background: #fff; padding: 12px; display: grid; gap: 8px; }
+.contact-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.sent-chip { margin-left: auto; font-size: 11.5px; font-weight: 600; background: #c9f2d6; border: 1.3px solid var(--ink); border-radius: 999px; padding: 0 8px; }
+.contact-lines { display: grid; gap: 4px; font-size: 13.5px; }
+.contact-lines > span { display: flex; gap: 8px; align-items: baseline; min-width: 0; overflow-wrap: anywhere; }
+.ico { width: 18px; flex: none; text-align: center; font-weight: 700; font-size: 12px; color: var(--ink2); }
+.ico.li { color: #0a66c2; }
+.contact-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.mini-btn {
+  font-size: 12.5px; font-weight: 600; padding: 5px 10px; border-radius: 8px; border: 1.4px solid var(--ink);
+  background: #fff; box-shadow: 2px 2px 0 var(--ink);
+}
+.mini-btn:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+.composer { border-top: 1.4px dashed var(--rule); padding-top: 10px; display: grid; gap: 8px; }
+.composer label { display: grid; gap: 4px; font-size: 12px; font-weight: 600; color: var(--ink2); }
+.composer input, .composer textarea {
+  width: 100%; border: 1.4px solid var(--ink); border-radius: 8px; padding: 8px 10px; background: #fff;
+  font-size: 13.5px; font-weight: 400; color: var(--ink); resize: vertical;
+}
+.composer input[readonly] { background: var(--paper); color: var(--ink2); }
+.composer-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.counter { justify-self: end; font-size: 11.5px; color: var(--ink3); margin-top: -4px; }
+.counter.warn { color: var(--hot); font-weight: 600; }
+.link-btn { justify-self: start; background: none; border: 0; padding: 0; font-size: 12.5px; text-decoration: underline; color: var(--ink2); }
+.reach-error { margin: 0; font-size: 13px; color: var(--hot); }
+.reach-info { margin: 0; font-size: 13px; color: var(--ok); font-weight: 600; }

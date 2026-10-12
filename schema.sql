@@ -20,3 +20,8 @@ CREATE TABLE IF NOT EXISTS statuses (
   status TEXT NOT NULL, -- contacted | replied | partner ("new" = no row)
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS contacts (
+  launch_id TEXT PRIMARY KEY,
+  data JSONB NOT NULL, -- founders' emails/LinkedIn (Hunter), drafts, sent log
+  updated_at TIMESTAMPTZ DEFAULT now()
+);

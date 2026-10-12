@@ -48,3 +48,45 @@ export interface Launch extends RawPost {
   analyzedAt?: string;
   alertedAt?: string;
 }
+
+/** A Gemini-written outreach draft for one founder. */
+export interface OutreachDraft {
+  subject: string;
+  body: string;
+  /** LinkedIn connection note, at most 200 characters (the free-account limit). */
+  linkedinNote: string;
+}
+
+/** Contact details found for one founder, plus drafts and what was sent. */
+export interface FounderContact {
+  name: string;
+  role: string;
+  email?: string;
+  /** Hunter confidence 0-100. */
+  emailScore?: number;
+  /** Hunter verification: valid | accept_all | unknown. */
+  emailStatus?: string;
+  linkedin?: string;
+  /** True when `linkedin` is a LinkedIn people-search link rather than a known profile. */
+  linkedinIsSearch?: boolean;
+  /** Why no email is shown (not found, opted out, ...). */
+  note?: string;
+  draft?: OutreachDraft;
+  sentAt?: string;
+  sentTo?: string;
+  sentSubject?: string;
+}
+
+export interface ContactsRecord {
+  domain: string | null;
+  foundAt: string;
+  founders: FounderContact[];
+}
+
+/** What the dashboard needs to know about outreach setup (no secrets). */
+export interface OutreachConfig {
+  hunter: boolean;
+  resend: boolean;
+  /** When set, every email is delivered to this address instead of the founder. */
+  testTo: string | null;
+}

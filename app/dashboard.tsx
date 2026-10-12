@@ -1,7 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CATEGORIES, type Category, type Launch, type OutreachStatus } from "@/lib/types";
+import {
+  CATEGORIES,
+  type Category,
+  type ContactsRecord,
+  type FounderContact,
+  type Launch,
+  type OutreachConfig,
+  type OutreachStatus,
+} from "@/lib/types";
 import { roleOf } from "@/lib/roles";
 import { scanNow } from "./actions";
 
@@ -61,6 +69,24 @@ const founderLine = (l: Launch) => {
     ? `by ${f.map((m) => (roleOf(m.headline) === "Maker" ? m.name : `${m.name} (${roleOf(m.headline)})`)).join(", ")}`
     : "Founder: see Product Hunt page";
 };
+
+async function copyText(text: string, container?: HTMLElement | null): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Clipboard API blocked (permissions, iframe, http): fall back to a hidden textarea.
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    (container ?? document.body).appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  }
+}
 
 export default function Dashboard() {
   const [launches, setLaunches] = useState<Launch[]>([]);
@@ -285,6 +311,9 @@ export default function Dashboard() {
           onStatus={(s) => changeStatus(opened.id, s)}
           note={notes[opened.id] ?? ""}
           onNoteSaved={(n) => setNotes((prev) => ({ ...prev, [opened.id]: n }))}
+          onContacted={() =>
+            setStatuses((s) => ((s[opened.id] ?? "new") === "new" ? { ...s, [opened.id]: "contacted" } : s))
+          }
           onClose={() => setOpenId(null)}
         />
       )}
@@ -396,6 +425,7 @@ function LaunchDialog({
   onStatus,
   note,
   onNoteSaved,
+  onContacted,
   onClose,
 }: {
   launch: Launch;
@@ -403,6 +433,7 @@ function LaunchDialog({
   onStatus: (s: OutreachStatus) => void;
   note: string;
   onNoteSaved: (n: string) => void;
+  onContacted: () => void;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -436,21 +467,7 @@ function LaunchDialog({
   }
 
   async function copyAngle() {
-    let ok = false;
-    try {
-      await navigator.clipboard.writeText(l.outreachAngle);
-      ok = true;
-    } catch {
-      // Clipboard API blocked (permissions, iframe, http): fall back to a hidden textarea.
-      const ta = document.createElement("textarea");
-      ta.value = l.outreachAngle;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      ref.current?.appendChild(ta);
-      ta.select();
-      ok = document.execCommand("copy");
-      ta.remove();
-    }
+    const ok = await copyText(l.outreachAngle, ref.current);
     setCopied(ok ? "Copied" : "Couldn't copy. Select the text instead.");
     setTimeout(() => setCopied(""), 1800);
   }
@@ -561,6 +578,8 @@ function LaunchDialog({
           )}
         </div>
 
+        <ReachOut launch={l} dialog={ref} onSent={onContacted} />
+
         <div className="notes">
           <label htmlFor={`note-${l.id}`}>Your notes</label>
           <textarea
@@ -585,5 +604,294 @@ function LaunchDialog({
         </div>
       </div>
     </dialog>
+  );
+}
+
+type Composer = { name: string; mode: "email" | "linkedin" };
+
+function ReachOut({
+  launch: l,
+  dialog,
+  onSent,
+}: {
+  launch: Launch;
+  dialog: React.RefObject<HTMLDialogElement | null>;
+  onSent: () => void;
+}) {
+  const [config, setConfig] = useState<OutreachConfig | null>(null);
+  const [contacts, setContacts] = useState<ContactsRecord | null>(null);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [composer, setComposer] = useState<Composer | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/outreach?id=${encodeURIComponent(l.id)}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.error) throw new Error(d.error);
+        setConfig(d.config);
+        setContacts(d.contacts);
+      })
+      .catch((e) => setError(`Couldn't load contacts: ${(e as Error).message}`));
+  }, [l.id]);
+
+  async function call(action: string, extra: Record<string, unknown> = {}) {
+    setBusy(`${action}:${extra.name ?? ""}`);
+    setError("");
+    setInfo("");
+    try {
+      const res = await fetch("/api/outreach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, id: l.id, ...extra }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error);
+      setContacts(d.contacts);
+      return d;
+    } catch (e) {
+      setError((e as Error).message);
+      return null;
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function openComposer(f: FounderContact, mode: Composer["mode"]) {
+    setComposer({ name: f.name, mode });
+    if (!f.draft) await call("draft", { name: f.name });
+  }
+
+  async function send(f: FounderContact, subject: string, body: string) {
+    const d = await call("send", { name: f.name, subject, body, again: !!f.sentAt });
+    if (d) {
+      setInfo(`Email sent to ${d.sentTo}.`);
+      setComposer(null);
+      onSent();
+    }
+  }
+
+  return (
+    <section className="reach">
+      <h3>Reach out</h3>
+      {config?.testTo && (
+        <p className="test-banner">
+          Test mode: every email goes to <b>{config.testTo}</b>, not to the founder.
+        </p>
+      )}
+
+      {!contacts ? (
+        <div className="reach-empty">
+          {l.makers.length ? (
+            <>
+              <button className="btn" onClick={() => call("find")} disabled={!!busy || !config}>
+                {busy.startsWith("find") ? "Looking up founders…" : "Find emails & LinkedIn"}
+              </button>
+              <span className="muted-text small">
+                {config && !config.hunter
+                  ? "Email lookup needs HUNTER_API_KEY. LinkedIn links and notes work now."
+                  : "Uses Hunter to find each founder's work email."}
+              </span>
+            </>
+          ) : (
+            <span className="muted-text">Product Hunt hides this launch&apos;s makers, so there&apos;s no one to look up.</span>
+          )}
+        </div>
+      ) : (
+        <ul className="contacts">
+          {contacts.founders.map((f) => (
+            <FounderCard
+              key={f.name}
+              founder={f}
+              config={config}
+              busy={busy}
+              composer={composer?.name === f.name ? composer.mode : null}
+              onOpen={(mode) => openComposer(f, mode)}
+              onClose={() => setComposer(null)}
+              onRedraft={() => call("draft", { name: f.name })}
+              onSend={(subject, body) => send(f, subject, body)}
+              copy={(text) => copyText(text, dialog.current)}
+            />
+          ))}
+        </ul>
+      )}
+
+      {contacts && config?.hunter && (
+        <button className="link-btn" onClick={() => call("find")} disabled={!!busy}>
+          {busy.startsWith("find") ? "Looking up again…" : "Look up again"}
+        </button>
+      )}
+      {error && (
+        <p className="reach-error" role="alert">
+          {error}
+        </p>
+      )}
+      {info && (
+        <p className="reach-info" role="status">
+          {info}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function FounderCard({
+  founder: f,
+  config,
+  busy,
+  composer,
+  onOpen,
+  onClose,
+  onRedraft,
+  onSend,
+  copy,
+}: {
+  founder: FounderContact;
+  config: OutreachConfig | null;
+  busy: string;
+  composer: Composer["mode"] | null;
+  onOpen: (mode: Composer["mode"]) => void;
+  onClose: () => void;
+  onRedraft: () => void;
+  onSend: (subject: string, body: string) => void;
+  copy: (text: string) => Promise<boolean>;
+}) {
+  const [subject, setSubject] = useState(f.draft?.subject ?? "");
+  const [body, setBody] = useState(f.draft?.body ?? "");
+  const [note, setNote] = useState(f.draft?.linkedinNote ?? "");
+  const [copied, setCopied] = useState(false);
+  const drafting = busy === `draft:${f.name}`;
+  const sending = busy === `send:${f.name}`;
+
+  // Fill the editors when a (re)generated draft arrives.
+  useEffect(() => {
+    setSubject(f.draft?.subject ?? "");
+    setBody(f.draft?.body ?? "");
+    setNote(f.draft?.linkedinNote ?? "");
+  }, [f.draft?.subject, f.draft?.body, f.draft?.linkedinNote]);
+
+  const emailLabel =
+    f.emailStatus === "valid" ? "verified" : typeof f.emailScore === "number" ? `${f.emailScore}% likely` : null;
+  const canEmail = !!f.email && !!config?.resend;
+
+  async function copyAndOpen() {
+    const ok = await copy(note);
+    setCopied(ok);
+    if (f.linkedin) window.open(f.linkedin, "_blank", "noopener,noreferrer");
+  }
+
+  return (
+    <li className="contact">
+      <div className="contact-head">
+        <span className="role">{f.role}</span>
+        <b>{f.name}</b>
+        {f.sentAt && (
+          <span className="sent-chip">
+            ✓ emailed {new Date(f.sentAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}
+          </span>
+        )}
+      </div>
+
+      <div className="contact-lines">
+        <span>
+          <span className="ico" aria-hidden="true">✉</span>
+          {f.email ? (
+            <>
+              <a href={`mailto:${f.email}`}>{f.email}</a>
+              {emailLabel && <span className="muted-text"> · {emailLabel}</span>}
+            </>
+          ) : (
+            <span className="muted-text">{f.note ?? "No email found."}</span>
+          )}
+        </span>
+        <span>
+          <span className="ico li" aria-hidden="true">in</span>
+          {f.linkedin ? (
+            <a href={f.linkedin} target="_blank" rel="noreferrer">
+              {f.linkedinIsSearch ? "Search LinkedIn ↗" : "LinkedIn profile ↗"}
+            </a>
+          ) : (
+            <span className="muted-text">No LinkedIn found</span>
+          )}
+        </span>
+      </div>
+
+      <div className="contact-actions">
+        <button
+          className="mini-btn"
+          onClick={() => onOpen("email")}
+          disabled={!canEmail || !!busy}
+          title={!f.email ? "No email for this founder" : !config?.resend ? "Add RESEND_API_KEY to send email" : undefined}
+        >
+          ✉ {f.sentAt ? "Email again" : "Write email"}
+        </button>
+        <button className="mini-btn" onClick={() => onOpen("linkedin")} disabled={!!busy}>
+          in · LinkedIn request
+        </button>
+        {!config?.resend && f.email && <span className="muted-text small">Sending email needs RESEND_API_KEY.</span>}
+      </div>
+
+      {composer && (
+        <div className="composer">
+          {drafting && !f.draft ? (
+            <p className="muted-text">Gemini is writing a draft for {f.name.split(" ")[0]}…</p>
+          ) : composer === "email" ? (
+            <>
+              <label>
+                To
+                <input value={config?.testTo ? `${config.testTo} (test, instead of ${f.email})` : f.email ?? ""} readOnly />
+              </label>
+              <label>
+                Subject
+                <input value={subject} onChange={(e) => setSubject(e.target.value)} />
+              </label>
+              <label>
+                Message
+                <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={9} />
+              </label>
+              <div className="composer-actions">
+                <button
+                  className="btn"
+                  onClick={() => onSend(subject, body)}
+                  disabled={sending || drafting || !subject.trim() || !body.trim()}
+                >
+                  {sending ? "Sending…" : config?.testTo ? "Send test email" : "Send email"}
+                </button>
+                <button className="mini-btn" onClick={onRedraft} disabled={!!busy}>
+                  {drafting ? "Rewriting…" : "↻ Rewrite"}
+                </button>
+                <button className="mini-btn" onClick={onClose}>
+                  Close
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <label>
+                Connection note
+                <textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, 200))} rows={4} />
+              </label>
+              <span className={`counter${note.length >= 190 ? " warn" : ""}`}>{note.length}/200</span>
+              <div className="composer-actions">
+                <button className="btn" onClick={copyAndOpen} disabled={!note.trim() || drafting}>
+                  {copied ? "Copied · LinkedIn opened" : "Copy note & open LinkedIn"}
+                </button>
+                <button className="mini-btn" onClick={onRedraft} disabled={!!busy}>
+                  {drafting ? "Rewriting…" : "↻ Rewrite"}
+                </button>
+                <button className="mini-btn" onClick={onClose}>
+                  Close
+                </button>
+              </div>
+              <p className="muted-text small">
+                On LinkedIn, click Connect → Add a note → paste. LinkedIn has no API for sending requests, so this last
+                click is yours.
+              </p>
+            </>
+          )}
+        </div>
+      )}
+    </li>
   );
 }

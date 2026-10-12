@@ -28,6 +28,10 @@ Dashboard `app/dashboard.tsx` (client, wrapped by `app/page.tsx`; sketchbook the
 
 ## Env vars
 See `.env.example`: PRODUCTHUNT_TOKEN, GEMINI_API_KEY, GEMINI_MODEL, DATABASE_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, APP_URL, CRON_SECRET.
+Outreach (optional): HUNTER_API_KEY, RESEND_API_KEY, OUTREACH_TEST_TO (test mode: all email goes there), OUTREACH_FROM, OUTREACH_SENDER_NAME, MY_COMPANY_NAME.
+
+## Outreach
+`lib/outreach.ts` + `POST /api/outreach` (actions find | draft | send). Founder contacts, drafts and the sent log live in the Neon `contacts` table (JSONB per launch). Product Hunt's `website` is a producthunt.com/r redirect; `resolveDomain` follows it for Hunter. Titles come from `lib/roles.ts`. LinkedIn requests are copy-note-and-open only (no API).
 
 ## Commands
 `npm install`, `npm run dev`, `npm run build`. Always run `npm run build` before committing; it type-checks.

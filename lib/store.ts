@@ -1,5 +1,5 @@
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
-import type { Launch, OutreachStatus } from "./types";
+import type { ContactsRecord, Launch, OutreachStatus } from "./types";
 
 let client: NeonQueryFunction<false, false> | null = null;
 let ready: Promise<void> | null = null;
@@ -21,6 +21,8 @@ async function sql(text: string, params: unknown[] = []) {
     await q.query(`CREATE TABLE IF NOT EXISTS notes (
       launch_id TEXT PRIMARY KEY, note TEXT NOT NULL, updated_at TIMESTAMPTZ DEFAULT now())`);
     await q.query(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
+    await q.query(`CREATE TABLE IF NOT EXISTS contacts (
+      launch_id TEXT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT now())`);
     await q.query(`CREATE TABLE IF NOT EXISTS statuses (
       launch_id TEXT PRIMARY KEY, status TEXT NOT NULL, updated_at TIMESTAMPTZ DEFAULT now())`);
   })().catch((err) => { ready = null; throw err; });
@@ -31,6 +33,11 @@ async function sql(text: string, params: unknown[] = []) {
 export async function getLaunches(): Promise<Record<string, Launch>> {
   const rows = await sql(`SELECT data FROM launches`);
   return Object.fromEntries(rows.map((r) => [(r.data as Launch).id, r.data as Launch]));
+}
+
+export async function getLaunch(id: string): Promise<Launch | null> {
+  const rows = await sql(`SELECT data FROM launches WHERE id = $1`, [id]);
+  return rows[0] ? (rows[0].data as Launch) : null;
 }
 
 export async function saveLaunches(items: Launch[]) {
@@ -80,6 +87,31 @@ export async function saveStatus(id: string, status: OutreachStatus) {
       [id, status]
     );
   }
+}
+
+export async function getContacts(id: string): Promise<ContactsRecord | null> {
+  const rows = await sql(`SELECT data FROM contacts WHERE launch_id = $1`, [id]);
+  return rows[0] ? (rows[0].data as ContactsRecord) : null;
+}
+
+export async function saveContacts(id: string, data: ContactsRecord) {
+  await sql(
+    `INSERT INTO contacts (launch_id, data) VALUES ($1, $2::jsonb)
+     ON CONFLICT (launch_id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`,
+    [id, JSON.stringify(data)]
+  );
+}
+
+/** Adds one to today's sent-email counter and returns the new total (UTC day). */
+export async function bumpEmailCount(): Promise<number> {
+  const key = `emailsSent:${new Date().toISOString().slice(0, 10)}`;
+  const rows = await sql(
+    `INSERT INTO meta (key, value) VALUES ($1, '1')
+     ON CONFLICT (key) DO UPDATE SET value = (meta.value::int + 1)::text
+     RETURNING value`,
+    [key]
+  );
+  return Number(rows[0]?.value ?? 1);
 }
 
 export async function getLastScan(): Promise<string | null> {

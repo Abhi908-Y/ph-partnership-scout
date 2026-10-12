@@ -17,6 +17,7 @@ Each launch shows: product name, founder, one-line description, upvotes, maker r
 | 7 | Alerts | Telegram Bot API (`lib/telegram.ts`) | One digest per scan listing new relevant launches with fit ≥ 5/10, with a link to the dashboard |
 | 8 | Dashboard | Next.js 16 page (`app/page.tsx` + `app/dashboard.tsx`) | Sketchbook-style ranked list (founder, one-liner, Gemini fit, upvotes, maker replies, 7-day bar), category tabs and search. Clicking a launch opens a pop-up with all founders and their roles, New / Contacted / Replied / Partner status (`PUT /api/status`), stats, Gemini summary, outreach angle + copy button, autosaving notes and links. Sidebar views: This week, Closing soon, Contacted, Replied, Partners, Not relevant. "Scan now" button |
 | 9 | Hosting | Vercel | Serves the dashboard and API routes |
+| 10 | Founder outreach | Hunter.io + Gemini Flash + Resend (`lib/outreach.ts`, `app/api/outreach`) | In the launch pop-up: finds each founder's work email and LinkedIn (Hunter), drafts a personal email and a 200-character LinkedIn note (Gemini), lets Kavya edit and send the email (Resend) and marks the launch Contacted. LinkedIn has no API for connection requests, so the app copies the note and opens the profile |
 
 Flow: GitHub Actions (or the "Scan now" button) → `/api/scan` → Product Hunt API → score → Gemini Flash → Neon Postgres → Telegram digest → dashboard reads `/api/launches`.
 
@@ -32,6 +33,17 @@ Flow: GitHub Actions (or the "Scan now" button) → `/api/scan` → Product Hunt
 8. Open the dashboard and click **Scan Product Hunt now** to fill it immediately.
 
 Local dev: `cp .env.example .env.local`, fill it in, then run `npm install && npm run dev`.
+
+## Founder outreach (optional)
+
+Add these to `.env.local` and Vercel to turn it on. Without them the dashboard still lists founders with LinkedIn search links and drafts LinkedIn notes.
+
+- `HUNTER_API_KEY`: from https://hunter.io/api-keys. One Email Finder lookup per founder, only when you click "Find emails & LinkedIn" (no credit is used when nothing is found).
+- `RESEND_API_KEY`: from https://resend.com/api-keys.
+- `OUTREACH_TEST_TO`: **test mode**. Every email goes to this address instead of the founder, marked with who it would have reached. Use your Resend account's email, because Resend's test sender (`onboarding@resend.dev`) only delivers there.
+- For real sending: verify a domain in Resend, set `OUTREACH_FROM="Kavya <kavya@yourcompany.com>"`, and remove `OUTREACH_TEST_TO`. Commercial email rules (CAN-SPAM, GDPR) apply: send one-to-one, be honest about who you are, and honour opt-outs.
+
+Safeguards: the server only sends to an email Hunter found for that launch's founders, at most once per founder unless you click "Email again", and at most 25 emails a day. Hunter's opt-out list (HTTP 451) is respected.
 
 ## Notes and limits
 
