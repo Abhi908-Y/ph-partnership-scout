@@ -15,3 +15,8 @@ CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS statuses (
+  launch_id TEXT PRIMARY KEY,
+  status TEXT NOT NULL, -- contacted | replied | partner ("new" = no row)
+  updated_at TIMESTAMPTZ DEFAULT now()
+);

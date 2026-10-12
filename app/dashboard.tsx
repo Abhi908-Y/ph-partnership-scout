@@ -1,15 +1,56 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Launch } from "@/lib/types";
+import { CATEGORIES, type Category, type Launch, type OutreachStatus } from "@/lib/types";
 import { scanNow } from "./actions";
 
-const TABS = ["All", "Project management", "HR tech", "Developer productivity", "Team communication"] as const;
-type Tab = (typeof TABS)[number];
 const DAY = 86_400_000;
 const WINDOW = 7;
 
-const daysSince = (iso: string) => Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / DAY));
+const CAT_COLOR: Record<Category, string> = {
+  "Project management": "var(--pm)",
+  "HR tech": "var(--hr)",
+  "Developer productivity": "var(--dev)",
+  "Team communication": "var(--team)",
+};
+const CAT_SHORT: Record<Category, string> = {
+  "Project management": "Project mgmt",
+  "HR tech": "HR tech",
+  "Developer productivity": "Dev productivity",
+  "Team communication": "Team comms",
+};
+
+const STATUS_LABEL: Record<OutreachStatus, string> = {
+  new: "New",
+  contacted: "Contacted",
+  replied: "Replied",
+  partner: "Partner",
+};
+
+type View = "week" | "closing" | "contacted" | "replied" | "partner" | "hidden";
+const VIEWS: { id: View; icon: string; label: string; title: [string, string] }[] = [
+  { id: "week", icon: "📌", label: "This week", title: ["This week's", "launch scout"] },
+  { id: "closing", icon: "⏳", label: "Closing soon", title: ["Closing", "in 2 days or less"] },
+  { id: "contacted", icon: "✉️", label: "Contacted", title: ["Founders you've", "contacted"] },
+  { id: "replied", icon: "💬", label: "Replied", title: ["Founders who", "replied"] },
+  { id: "partner", icon: "🤝", label: "Partners", title: ["Your new", "partners"] },
+  { id: "hidden", icon: "🙈", label: "Not relevant", title: ["Filtered out", "by Gemini"] },
+];
+
+const SOURCES = [
+  { name: "Product Hunt", logo: "/sources/producthunt.png", live: true },
+  { name: "Hacker News", logo: "/sources/hackernews.svg" },
+  { name: "BetaList", logo: "/sources/betalist.png" },
+  { name: "Uneed", logo: "/sources/uneed.png" },
+  { name: "DevHunt", logo: "/sources/devhunt.png" },
+  { name: "MicroLaunch", logo: "/sources/microlaunch.png" },
+  { name: "Peerlist", logo: "/sources/peerlist.png" },
+  { name: "Fazier", logo: "/sources/fazier.png" },
+];
+
+const isCategory = (c: string): c is Category => (CATEGORIES as readonly string[]).includes(c);
+const dayOf = (iso: string) => Math.min(WINDOW, Math.max(1, Math.floor((Date.now() - Date.parse(iso)) / DAY) + 1));
+const daysLeft = (iso: string) => WINDOW - dayOf(iso);
 const timeAgo = (iso: string) => {
   const m = Math.round((Date.now() - Date.parse(iso)) / 60_000);
   if (m < 1) return "just now";
@@ -17,15 +58,23 @@ const timeAgo = (iso: string) => {
   const h = Math.round(m / 60);
   return h < 24 ? `${h} h ago` : `${Math.round(h / 24)} d ago`;
 };
+const fitTone = (fit: number) => (fit >= 7 ? "high" : fit >= 5 ? "mid" : "low");
+const replies = (l: Launch) =>
+  l.scoreBasis === "maker"
+    ? { n: l.makerComments ?? 0, label: "maker replies" }
+    : { n: l.commentsCount, label: "comments" };
 
 export default function Dashboard() {
   const [launches, setLaunches] = useState<Launch[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [statuses, setStatuses] = useState<Record<string, OutreachStatus>>({});
   const [lastScan, setLastScan] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("All");
-  const [showFiltered, setShowFiltered] = useState(false);
-  const [open, setOpen] = useState<string | null>(null);
-  const [status, setStatus] = useState("");
+  const [view, setView] = useState<View>("week");
+  const [cat, setCat] = useState<Category | "All">("All");
+  const [query, setQuery] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
 
@@ -36,142 +85,372 @@ export default function Dashboard() {
       if (!res.ok) throw new Error(data.error);
       setLaunches(data.launches);
       setNotes(data.notes);
+      setStatuses(data.statuses ?? {});
       setLastScan(data.lastScan);
     } catch (err) {
-      setStatus(`Couldn't load launches: ${(err as Error).message}`);
+      setMessage(`Couldn't load launches: ${(err as Error).message}`);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   async function scan() {
     setScanning(true);
-    setStatus("Checking Product Hunt and asking Gemini to sort new launches…");
+    setMessage("Checking Product Hunt and asking Gemini to sort new launches…");
     try {
       const data = await scanNow();
-      if ("error" in data) setStatus(`Scan failed: ${data.error}`);
-      else if (data.skipped) setStatus("A scan ran less than 3 minutes ago, so these results are current.");
+      if ("error" in data) setMessage(`Scan failed: ${data.error}`);
+      else if (data.skipped) setMessage("A scan ran less than 3 minutes ago, so these results are current.");
       else
-        setStatus(
+        setMessage(
           `Scan finished: ${data.found} launches checked, ${data.newCount} new, ${data.analyzed} sorted by Gemini` +
             (data.alerted ? `, ${data.alerted} sent to Telegram.` : ".") +
             (data.errors.length ? ` ${data.errors.length} errors (first: ${data.errors[0].slice(0, 160)})` : "")
         );
       await load();
     } catch {
-      setStatus("Scan failed: the server didn't respond. Try again in a minute.");
+      setMessage("Scan failed: the server didn't respond. Try again in a minute.");
     } finally {
       setScanning(false);
     }
   }
 
+  async function changeStatus(id: string, next: OutreachStatus) {
+    const prev = statuses[id] ?? "new";
+    setStatuses((s) => ({ ...s, [id]: next }));
+    const res = await fetch("/api/status", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status: next }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      setStatuses((s) => ({ ...s, [id]: prev }));
+      setMessage("Couldn't save the status. Check your connection and try again.");
+    }
+  }
+
+  const statusOf = useCallback((id: string) => statuses[id] ?? "new", [statuses]);
   const relevant = useMemo(() => launches.filter((l) => l.category !== "Not relevant"), [launches]);
-  const filteredOut = launches.length - relevant.length;
-  const pool = showFiltered ? launches : relevant;
-  const visible = tab === "All" ? pool : pool.filter((l) => l.category === tab);
-  const count = (t: Tab) => (t === "All" ? pool.length : pool.filter((l) => l.category === t).length);
-  const closingSoon = relevant.filter((l) => WINDOW - daysSince(l.launchedAt) <= 2).length;
+
+  const inView = useCallback(
+    (l: Launch, v: View) => {
+      switch (v) {
+        case "week":
+          return l.category !== "Not relevant";
+        case "closing":
+          return l.category !== "Not relevant" && daysLeft(l.launchedAt) <= 2;
+        case "hidden":
+          return l.category === "Not relevant";
+        default:
+          return statusOf(l.id) === v;
+      }
+    },
+    [statusOf]
+  );
+
+  const viewPool = useMemo(() => launches.filter((l) => inView(l, view)), [launches, view, inView]);
+  const q = query.trim().toLowerCase();
+  const visible = viewPool.filter(
+    (l) =>
+      (cat === "All" || l.category === cat) &&
+      (!q || `${l.name} ${l.oneLiner} ${l.tagline} ${l.makers.join(" ")}`.toLowerCase().includes(q))
+  );
+  const selected = visible.find((l) => l.id === selectedId) ?? visible[0] ?? null;
+  const catCount = (c: Category | "All") => (c === "All" ? viewPool.length : viewPool.filter((l) => l.category === c).length);
+  const viewMeta = VIEWS.find((v) => v.id === view)!;
+
+  function select(id: string) {
+    setSelectedId(id);
+    setPanelOpen(true);
+  }
 
   return (
-    <main className="shell">
-      <header className="top">
-        <div>
-          <h1 className="headline">
-            {loading ? "Loading launches" : `${relevant.length} launches still inside their first week`}
-          </h1>
-          <p className="sub">
-            Ranked by upvotes plus maker replies, filtered to project management, HR tech, developer
-            productivity and team communication.{" "}
-            {closingSoon > 0 && <strong>{closingSoon} close within 2 days.</strong>}
-          </p>
+    <div className="app">
+      <aside className="side">
+        <div className="brand">
+          <span className="brand-mark sk" aria-hidden="true">🔭</span>
+          <div>
+            <b>Partnership Scout</b>
+            <small>for Kavya · async standups</small>
+          </div>
         </div>
-        <div className="scan">
-          <button className="btn" onClick={scan} disabled={scanning}>
-            {scanning ? "Scanning…" : "Scan Product Hunt now"}
-          </button>
-          <span className="meta">{lastScan ? `Last scan ${timeAgo(lastScan)}` : "No scans yet"}</span>
+
+        <nav className="nav" aria-label="Views">
+          {VIEWS.map((v) => (
+            <button
+              key={v.id}
+              className="nav-item"
+              aria-pressed={view === v.id}
+              onClick={() => {
+                setView(v.id);
+                setCat("All");
+              }}
+            >
+              <span aria-hidden="true">{v.icon}</span>
+              {v.label}
+              <span className="n">{launches.filter((l) => inView(l, v.id)).length}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="side-section">
+          <div className="label">Categories</div>
+          <nav className="nav" aria-label="Categories">
+            {CATEGORIES.map((c) => (
+              <button key={c} className="nav-item" aria-pressed={cat === c} onClick={() => setCat(cat === c ? "All" : c)}>
+                <span className="dot" style={{ background: CAT_COLOR[c] }} />
+                {c}
+                <span className="n">{catCount(c)}</span>
+              </button>
+            ))}
+          </nav>
         </div>
-      </header>
 
-      {status && <p className="status" role="status">{status}</p>}
+        <div className="side-section sources-section">
+          <div className="label">Where we look</div>
+          <div className="board">
+            {SOURCES.map((s) => (
+              <div key={s.name} className={`tile sk${s.live ? "" : " dim"}`}>
+                <span className={`badge${s.live ? "" : " soon"}`}>{s.live ? "live" : "soon"}</span>
+                <img src={s.logo} alt="" width={26} height={26} />
+                {s.name}
+              </div>
+            ))}
+          </div>
+        </div>
+      </aside>
 
-      <nav className="tabs" aria-label="Categories">
-        {TABS.map((t) => (
-          <button key={t} className="tab" aria-pressed={tab === t} onClick={() => setTab(t)}>
-            {t}<span className="n">{count(t)}</span>
-          </button>
-        ))}
-      </nav>
+      <main className="main">
+        <header className="head">
+          <div className="head-text">
+            <h1>
+              {viewMeta.title[0]} <mark>{viewMeta.title[1]}</mark>
+            </h1>
+            <p>
+              {loading
+                ? "Loading launches…"
+                : `${relevant.length} Product Hunt launches still inside their 7-day window · ${
+                    lastScan ? `last scan ${timeAgo(lastScan)}` : "no scans yet"
+                  }`}
+            </p>
+          </div>
+          <Rocket />
+          <div className="actions">
+            <label className="search">
+              <span aria-hidden="true">⌕</span>
+              <input
+                type="search"
+                placeholder="Search launches"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                aria-label="Search launches"
+              />
+            </label>
+            <button className="btn" onClick={scan} disabled={scanning}>
+              {scanning ? "Scanning…" : "↻ Scan now"}
+            </button>
+          </div>
+        </header>
 
-      {visible.length === 0 ? (
-        <div className="list empty">
-          <p>
-            {launches.length === 0
-              ? "Nothing here yet. Run a scan to pull the last seven days of launches from Product Hunt."
-              : "No launches in this category right now. Check another tab or scan again later."}
+        {message && (
+          <p className="message" role="status">
+            {message}
           </p>
-          {launches.length === 0 && (
-            <button className="btn" onClick={scan} disabled={scanning}>Scan Product Hunt now</button>
+        )}
+
+        <div className="tabs" role="tablist" aria-label="Category filter">
+          {(["All", ...CATEGORIES] as const).map((c) => (
+            <button key={c} role="tab" className="tab" aria-selected={cat === c} onClick={() => setCat(c)}>
+              {c !== "All" && <span className="dot" style={{ background: CAT_COLOR[c] }} />}
+              {c === "All" ? "All" : CAT_SHORT[c]}
+              <span className="n">{catCount(c)}</span>
+            </button>
+          ))}
+          <span className="hint">
+            ranked by upvotes + 5 × maker replies
+            <svg width="30" height="18" viewBox="0 0 34 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+              <path d="M2 4c10 0 20 4 26 12" />
+              <path d="M22 15l6 2 1-6" />
+            </svg>
+          </span>
+        </div>
+
+        <div className="body">
+          {visible.length === 0 ? (
+            <div className="empty sk">
+              <p>
+                {loading
+                  ? "Loading launches…"
+                  : launches.length === 0
+                    ? "Nothing here yet. Run a scan to pull the last seven days of launches from Product Hunt."
+                    : q
+                      ? `No launches match “${query}”.`
+                      : view === "week" || view === "closing" || view === "hidden"
+                        ? "No launches here right now. Try another category or scan again later."
+                        : `No launches marked “${viewMeta.label}” yet. Open a launch and set its status.`}
+              </p>
+              {!loading && launches.length === 0 && (
+                <button className="btn" onClick={scan} disabled={scanning}>
+                  ↻ Scan Product Hunt now
+                </button>
+              )}
+            </div>
+          ) : (
+            <ol className="list sk">
+              {visible.map((l, i) => (
+                <Row
+                  key={l.id}
+                  launch={l}
+                  rank={i + 1}
+                  status={statusOf(l.id)}
+                  hasNote={!!notes[l.id]}
+                  selected={selected?.id === l.id}
+                  onSelect={() => select(l.id)}
+                />
+              ))}
+            </ol>
+          )}
+
+          {selected && (
+            <Detail
+              key={selected.id}
+              launch={selected}
+              status={statusOf(selected.id)}
+              onStatus={(s) => changeStatus(selected.id, s)}
+              note={notes[selected.id] ?? ""}
+              onNoteSaved={(n) => setNotes((prev) => ({ ...prev, [selected.id]: n }))}
+              open={panelOpen}
+              onClose={() => setPanelOpen(false)}
+            />
           )}
         </div>
-      ) : (
-        <ol className="list">
-          {visible.map((l, i) => (
-            <Row
-              key={l.id}
-              launch={l}
-              rank={i + 1}
-              expanded={open === l.id}
-              onToggle={() => setOpen(open === l.id ? null : l.id)}
-              note={notes[l.id] ?? ""}
-              onNoteSaved={(n) => setNotes((prev) => ({ ...prev, [l.id]: n }))}
-            />
-          ))}
-        </ol>
-      )}
-
-      {filteredOut > 0 && (
-        <p className="toggle">
-          <button className="btn btn-quiet" onClick={() => setShowFiltered(!showFiltered)}>
-            {showFiltered ? "Hide" : "Show"} {filteredOut} launches Gemini marked not relevant
-          </button>
-        </p>
-      )}
-    </main>
-  );
-}
-
-function Window({ launchedAt }: { launchedAt: string }) {
-  const used = Math.min(WINDOW, daysSince(launchedAt) + 1);
-  const left = WINDOW - used;
-  const tone = left >= 3 ? "open" : left >= 1 ? "closing" : "last";
-  const label = left === 0 ? "Last day to reach out" : `Day ${used} of ${WINDOW}, ${left} left`;
-  return (
-    <div className="window" data-tone={tone} aria-label={label}>
-      <div className="segs" aria-hidden="true">
-        {Array.from({ length: WINDOW }, (_, i) => (
-          <span key={i} className={`seg${i < used ? " used" : ""}`} />
-        ))}
-      </div>
-      <span className="window-label">{label}</span>
+      </main>
     </div>
   );
 }
 
+function Rocket() {
+  return (
+    <svg className="rocket" width="150" height="70" viewBox="0 0 150 70" fill="none" stroke="var(--ink)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6 60c18-4 30-14 44-16s28 6 44-6" strokeDasharray="4 6" />
+      <g transform="translate(100 6) rotate(35 18 18)">
+        <path d="M18 2c8 6 11 16 9 26H9C7 18 10 8 18 2z" fill="#fff" />
+        <circle cx="18" cy="15" r="3.6" fill="var(--dev)" />
+        <path d="M9 22 3 30l7-1M27 22l6 8-7-1" fill="var(--hr)" />
+        <path d="M13 29l5 8 5-8" fill="var(--team)" />
+      </g>
+      <path d="M70 12l3 6M64 18l-5 2M76 6l1-5" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function WindowBar({ launchedAt, compact }: { launchedAt: string; compact?: boolean }) {
+  const day = dayOf(launchedAt);
+  const left = WINDOW - day;
+  const tone = left === 0 ? "hot" : left <= 2 ? "warn" : "ok";
+  const label = left === 0 ? "last day!" : `${left} day${left === 1 ? "" : "s"} left`;
+  return (
+    <div className="window" data-tone={tone} aria-label={`Day ${day} of ${WINDOW}, ${label}`}>
+      <div className="segs" aria-hidden="true">
+        {Array.from({ length: WINDOW }, (_, k) => (
+          <span key={k} className={`seg${k < day ? " used" : ""}`} />
+        ))}
+      </div>
+      <div className="window-label">
+        {!compact && <span>Day {day} of 7</span>}
+        <span className="left">{label}</span>
+      </div>
+    </div>
+  );
+}
+
+function CategoryChip({ launch: l }: { launch: Launch }) {
+  if (isCategory(l.category))
+    return (
+      <span className="chip">
+        <span className="dot" style={{ background: CAT_COLOR[l.category] }} />
+        {CAT_SHORT[l.category]}
+      </span>
+    );
+  return <span className="chip muted">{l.category === "Pending" ? "analysis pending" : "not relevant"}</span>;
+}
+
 function Row({
-  launch: l, rank, expanded, onToggle, note, onNoteSaved,
+  launch: l,
+  rank,
+  status,
+  hasNote,
+  selected,
+  onSelect,
 }: {
-  launch: Launch; rank: number; expanded: boolean; onToggle: () => void;
-  note: string; onNoteSaved: (n: string) => void;
+  launch: Launch;
+  rank: number;
+  status: OutreachStatus;
+  hasNote: boolean;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const r = replies(l);
+  return (
+    <li>
+      <button className="row" aria-pressed={selected} onClick={onSelect}>
+        <span className="rank">{rank}</span>
+        {l.thumbnail ? <img className="thumb" src={l.thumbnail} alt="" /> : <span className="thumb" />}
+        <span className="who">
+          <span className="name">
+            {l.name}
+            <CategoryChip launch={l} />
+            {status !== "new" && <span className={`status-chip s-${status}`}>{STATUS_LABEL[status]}</span>}
+            {hasNote && <span className="note-dot" title="Has notes">✎</span>}
+          </span>
+          <span className="one">{l.category === "Pending" ? l.tagline : l.oneLiner}</span>
+          <span className="founder">{l.makers.length ? `by ${l.makers.join(", ")}` : "Founder: see Product Hunt page"}</span>
+        </span>
+        <span className="fit" data-tone={l.analyzedAt ? fitTone(l.relevance) : "low"}>
+          {l.analyzedAt ? `fit ${l.relevance}/10` : "fit –"}
+        </span>
+        <span className="stat">
+          <b>{l.votes}</b>
+          <span>upvotes</span>
+        </span>
+        <span className="stat replies">
+          <b>{r.n}</b>
+          <span>{r.label}</span>
+        </span>
+        <WindowBar launchedAt={l.launchedAt} compact />
+      </button>
+    </li>
+  );
+}
+
+function Detail({
+  launch: l,
+  status,
+  onStatus,
+  note,
+  onNoteSaved,
+  open,
+  onClose,
+}: {
+  launch: Launch;
+  status: OutreachStatus;
+  onStatus: (s: OutreachStatus) => void;
+  note: string;
+  onNoteSaved: (n: string) => void;
+  open: boolean;
+  onClose: () => void;
 }) {
   const [draft, setDraft] = useState(note);
   const [saveState, setSaveState] = useState("");
   const [copied, setCopied] = useState("");
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const r = replies(l);
 
-  useEffect(() => setDraft(note), [note]);
+  useEffect(() => () => clearTimeout(timer.current), []);
 
   function editNote(value: string) {
     setDraft(value);
@@ -182,9 +461,9 @@ function Row({
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: l.id, note: value }),
-      });
-      setSaveState(res.ok ? "Saved" : "Couldn't save. Your text is still here; keep typing to retry.");
-      if (res.ok) onNoteSaved(value);
+      }).catch(() => null);
+      setSaveState(res?.ok ? "Saved" : "Couldn't save. Your text is still here; keep typing to retry.");
+      if (res?.ok) onNoteSaved(value);
     }, 700);
   }
 
@@ -208,64 +487,91 @@ function Row({
     setTimeout(() => setCopied(""), 1800);
   }
 
-  const founder = l.makers.length ? l.makers.join(", ") : null;
-  const replies = l.scoreBasis === "maker" ? l.makerComments ?? 0 : l.commentsCount;
-
   return (
-    <li className="row">
-      <button className="row-head" onClick={onToggle} aria-expanded={expanded}>
-        <span className="rank">{rank}</span>
-        <span className="product">
-          {l.thumbnail ? <img className="thumb" src={l.thumbnail} alt="" /> : <span className="thumb" />}
-          <span>
-            <p className="name">
-              {l.name}
-              {l.category !== "Pending" && <span className="cat">{l.category}</span>}
-              {l.analyzedAt && <span className="cat fit" title="Partnership fit, rated by Gemini">Fit {l.relevance}/10</span>}
-            </p>
-            <p className="one">{l.category === "Pending" ? `${l.tagline} (analysis pending)` : l.oneLiner}</p>
-            <p className="founder">{founder ? `Founder: ${founder}` : "Founder: see Product Hunt page"}</p>
-          </span>
-        </span>
-        <span className="stat"><b>{l.votes}</b><span>upvotes</span></span>
-        <span className="stat comments">
-          <b>{replies}</b>
-          <span>{l.scoreBasis === "maker" ? "maker replies" : "comments"}</span>
-        </span>
-        <Window launchedAt={l.launchedAt} />
+    <aside className="detail sk" data-open={open} aria-label={`${l.name} details`}>
+      <button className="close" onClick={onClose} aria-label="Close details">
+        ✕
       </button>
-
-      {expanded && (
-        <div className="detail">
-          <div className="panel">
-            <h3>Suggested outreach angle</h3>
-            {l.outreachAngle ? (
-              <>
-                <p className="angle">{l.outreachAngle}</p>
-                <button className="btn btn-quiet" onClick={copyAngle}>{copied || "Copy angle"}</button>
-              </>
-            ) : (
-              <p className="one">Gemini hasn't analyzed this launch yet. It will be picked up on the next scan.</p>
+      <div className="d-top">
+        {l.thumbnail ? <img src={l.thumbnail} alt="" /> : <span className="thumb" />}
+        <div>
+          <h2>{l.name}</h2>
+          <p>{l.makers.length ? `by ${l.makers.join(", ")}` : "Founder: see Product Hunt page"}</p>
+          <div className="d-chips">
+            <CategoryChip launch={l} />
+            {l.analyzedAt && (
+              <span className="fit" data-tone={fitTone(l.relevance)}>
+                fit {l.relevance}/10
+              </span>
             )}
-            <div className="links">
-              <a href={l.url} target="_blank" rel="noreferrer">Product Hunt page</a>
-              <a href={l.website} target="_blank" rel="noreferrer">Website</a>
-              <span>Launched {new Date(l.launchedAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</span>
-              <span>Score {l.score}</span>
-            </div>
-          </div>
-          <div className="panel">
-            <h3><label htmlFor={`note-${l.id}`}>Your notes</label></h3>
-            <textarea
-              id={`note-${l.id}`}
-              value={draft}
-              onChange={(e) => editNote(e.target.value)}
-              placeholder="Fit, who to contact, whether you've reached out…"
-            />
-            <div className="saved" aria-live="polite">{saveState}</div>
           </div>
         </div>
-      )}
-    </li>
+      </div>
+
+      <div className="status-buttons" role="group" aria-label="Outreach status">
+        {(Object.keys(STATUS_LABEL) as OutreachStatus[]).map((s) => (
+          <button key={s} className={`s-${s}`} aria-pressed={status === s} onClick={() => onStatus(s)}>
+            {STATUS_LABEL[s]}
+          </button>
+        ))}
+      </div>
+
+      <div className="d-stats">
+        <div>
+          <b>{l.votes}</b>
+          <span>upvotes</span>
+        </div>
+        <div>
+          <b>{r.n}</b>
+          <span>{r.label}</span>
+        </div>
+        <div>
+          <b>{l.score}</b>
+          <span>score</span>
+        </div>
+      </div>
+
+      <WindowBar launchedAt={l.launchedAt} />
+
+      <div className="angle">
+        <svg className="sparkle" width="30" height="26" viewBox="0 0 30 26" fill="none" stroke="var(--ink)" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+          <path d="M10 3v10M5 8h10M23 13v8M19 17h8" />
+        </svg>
+        <h3>✦ Outreach angle</h3>
+        {l.outreachAngle ? (
+          <>
+            <p>{l.outreachAngle}</p>
+            <button className="btn" onClick={copyAngle}>
+              {copied || "Copy angle"}
+            </button>
+          </>
+        ) : (
+          <p className="muted-text">Gemini hasn&apos;t analyzed this launch yet. It will be picked up on the next scan.</p>
+        )}
+      </div>
+
+      <div className="notes">
+        <label htmlFor={`note-${l.id}`}>Your notes</label>
+        <textarea
+          id={`note-${l.id}`}
+          value={draft}
+          onChange={(e) => editNote(e.target.value)}
+          placeholder="Who to contact, where, and what you said…"
+        />
+        <div className="saved" aria-live="polite">
+          {saveState}
+        </div>
+      </div>
+
+      <div className="links">
+        <a href={l.url} target="_blank" rel="noreferrer">
+          Product Hunt page ↗
+        </a>
+        <a href={l.website} target="_blank" rel="noreferrer">
+          Website ↗
+        </a>
+        <span>Launched {new Date(l.launchedAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</span>
+      </div>
+    </aside>
   );
 }

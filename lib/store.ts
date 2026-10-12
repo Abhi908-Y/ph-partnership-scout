@@ -1,5 +1,5 @@
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
-import type { Launch } from "./types";
+import type { Launch, OutreachStatus } from "./types";
 
 let client: NeonQueryFunction<false, false> | null = null;
 let ready: Promise<void> | null = null;
@@ -21,6 +21,8 @@ async function sql(text: string, params: unknown[] = []) {
     await q.query(`CREATE TABLE IF NOT EXISTS notes (
       launch_id TEXT PRIMARY KEY, note TEXT NOT NULL, updated_at TIMESTAMPTZ DEFAULT now())`);
     await q.query(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
+    await q.query(`CREATE TABLE IF NOT EXISTS statuses (
+      launch_id TEXT PRIMARY KEY, status TEXT NOT NULL, updated_at TIMESTAMPTZ DEFAULT now())`);
   })().catch((err) => { ready = null; throw err; });
   await ready;
   return (await q.query(text, params)) as Record<string, unknown>[];
@@ -59,6 +61,24 @@ export async function saveNote(id: string, note: string) {
     );
   } else {
     await sql(`DELETE FROM notes WHERE launch_id = $1`, [id]);
+  }
+}
+
+export async function getStatuses(): Promise<Record<string, OutreachStatus>> {
+  const rows = await sql(`SELECT launch_id, status FROM statuses`);
+  return Object.fromEntries(rows.map((r) => [String(r.launch_id), r.status as OutreachStatus]));
+}
+
+/** "new" is the default, so it is stored as the absence of a row. */
+export async function saveStatus(id: string, status: OutreachStatus) {
+  if (status === "new") {
+    await sql(`DELETE FROM statuses WHERE launch_id = $1`, [id]);
+  } else {
+    await sql(
+      `INSERT INTO statuses (launch_id, status) VALUES ($1, $2)
+       ON CONFLICT (launch_id) DO UPDATE SET status = EXCLUDED.status, updated_at = now()`,
+      [id, status]
+    );
   }
 }
 

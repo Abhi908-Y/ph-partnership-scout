@@ -6,6 +6,10 @@ export const CATEGORIES = [
 ] as const;
 
 export type Category = (typeof CATEGORIES)[number];
+
+/** Kavya's outreach progress per launch, set from the dashboard. */
+export const OUTREACH_STATUSES = ["new", "contacted", "replied", "partner"] as const;
+export type OutreachStatus = (typeof OUTREACH_STATUSES)[number];
 export type Classification = Category | "Not relevant" | "Pending";
 
 export interface RawPost {
