@@ -148,9 +148,14 @@ a { color: var(--ink); }
   border: 1.4px solid var(--ink); background: #fff; border-radius: 8px; width: 32px; height: 32px;
 }
 .founders ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.founders li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.founders li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
 .founders li a, .founders li b { font-weight: 700; }
-.founders li span { color: var(--ink2); font-size: 13px; }
+.role {
+  font-size: 11.5px; font-weight: 700; border: 1.3px solid var(--ink); border-radius: 6px;
+  padding: 1px 7px; background: var(--hl-soft); white-space: nowrap;
+}
+.status-hint { margin: -8px 0 0; font-size: 12.5px; color: var(--ink3); }
+.status-hint b { color: var(--ink2); font-weight: 600; }
 .small { font-size: 12px; margin: 6px 0 0; }
 .summary { margin: 0; line-height: 1.6; }
 .d-top { display: flex; gap: 14px; align-items: center; padding-right: 40px; }

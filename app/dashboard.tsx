@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CATEGORIES, type Category, type Launch, type OutreachStatus } from "@/lib/types";
+import { roleOf } from "@/lib/roles";
 import { scanNow } from "./actions";
 
 const DAY = 86_400_000;
@@ -52,7 +53,14 @@ const replies = (l: Launch) =>
   l.scoreBasis === "maker"
     ? { n: l.makerComments ?? 0, label: "maker replies" }
     : { n: l.commentsCount, label: "comments" };
-const founderLine = (l: Launch) => (l.makers.length ? `by ${l.makers.join(", ")}` : "Founder: see Product Hunt page");
+const foundersOf = (l: Launch) =>
+  l.makerProfiles?.length ? l.makerProfiles : l.makers.map((name) => ({ name, headline: undefined, username: undefined }));
+const founderLine = (l: Launch) => {
+  const f = foundersOf(l);
+  return f.length
+    ? `by ${f.map((m) => (roleOf(m.headline) === "Maker" ? m.name : `${m.name} (${roleOf(m.headline)})`)).join(", ")}`
+    : "Founder: see Product Hunt page";
+};
 
 export default function Dashboard() {
   const [launches, setLaunches] = useState<Launch[]>([]);
@@ -403,7 +411,7 @@ function LaunchDialog({
   const [copied, setCopied] = useState("");
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const r = replies(l);
-  const founders = l.makerProfiles?.length ? l.makerProfiles : l.makers.map((name) => ({ name, headline: undefined, username: undefined }));
+  const founders = foundersOf(l);
   const summary = l.summary || l.description || l.tagline;
 
   useEffect(() => {
@@ -479,6 +487,9 @@ function LaunchDialog({
             <ul>
               {founders.map((f) => (
                 <li key={f.name}>
+                  <span className="role" title={f.headline}>
+                    {roleOf(f.headline)}
+                  </span>
                   {f.username ? (
                     <a href={`https://www.producthunt.com/@${f.username}`} target="_blank" rel="noreferrer">
                       {f.name}
@@ -486,7 +497,6 @@ function LaunchDialog({
                   ) : (
                     <b>{f.name}</b>
                   )}
-                  {f.headline && <span>{f.headline}</span>}
                 </li>
               ))}
             </ul>
@@ -507,6 +517,10 @@ function LaunchDialog({
             </button>
           ))}
         </div>
+        <p className="status-hint">
+          Track your outreach: mark <b>Contacted</b> when you message a founder, <b>Replied</b> when they answer,
+          and <b>Partner</b> when you agree to work together. The launch then appears under that view in the sidebar.
+        </p>
 
         <div className="d-stats">
           <div>
