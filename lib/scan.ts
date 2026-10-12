@@ -59,7 +59,8 @@ export async function runScan({ force }: { force: boolean }): Promise<ScanResult
 
   // Analyze unprocessed launches with Gemini, highest score first.
   const pending = [...all.values()]
-    .filter((l) => !l.analyzedAt)
+    // Launches analyzed before summaries existed are re-analyzed once to get one.
+    .filter((l) => !l.analyzedAt || !l.summary)
     .sort((a, b) => b.score - a.score)
     .slice(0, MAX_ANALYZE_PER_SCAN);
   const batches: Launch[][] = [];
@@ -81,6 +82,7 @@ export async function runScan({ force }: { force: boolean }): Promise<ScanResult
           category: isCategory(a.category) ? a.category : "Not relevant",
           relevance: Math.max(0, Math.min(10, Number(a.relevance) || 0)),
           oneLiner: a.oneLiner || l.tagline,
+          summary: a.summary || undefined,
           outreachAngle: a.outreachAngle || "",
           analyzedAt: startedAt,
         });

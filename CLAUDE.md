@@ -16,7 +16,7 @@ Exam project (MESA Cohort C4, Case 4). Kavya leads partnerships at an async-stan
 
 ## Flow
 `/api/scan` → `lib/scan.ts`: fetch PH (`lib/producthunt.ts`) → merge with Neon → score → drop launches older than 7 days → Gemini analysis (`lib/gemini.ts`, max 80 per scan, batches of 8, 4 in parallel) → Telegram digest (fit ≥ 5 only) → save.
-Dashboard `app/dashboard.tsx` (client, wrapped by `app/page.tsx`; sketchbook theme in `app/globals.css`, Inter via next/font) reads `/api/launches`, saves notes via `PUT /api/notes` and outreach status via `PUT /api/status`. Source logos live in `public/sources/`.
+Dashboard `app/dashboard.tsx` (client, wrapped by `app/page.tsx`; sketchbook theme in `app/globals.css`, Inter via next/font) reads `/api/launches`, saves notes via `PUT /api/notes` and outreach status via `PUT /api/status`.
 
 ## Scoring
 `score = votes + 5 × makerComments`, where makerComments is Product Hunt's `makerReplies` field (one cheap query per topic, no comment fetching). If PH redacts every maker name (`[REDACTED]`, id 0), makerComments is null, the founder shows as "see Product Hunt page", and the score falls back to `votes + commentsCount` with `scoreBasis: "all"`.

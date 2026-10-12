@@ -37,17 +37,6 @@ const VIEWS: { id: View; icon: string; label: string; title: [string, string] }[
   { id: "hidden", icon: "🙈", label: "Not relevant", title: ["Filtered out", "by Gemini"] },
 ];
 
-const SOURCES = [
-  { name: "Product Hunt", logo: "/sources/producthunt.png", live: true },
-  { name: "Hacker News", logo: "/sources/hackernews.svg" },
-  { name: "BetaList", logo: "/sources/betalist.png" },
-  { name: "Uneed", logo: "/sources/uneed.png" },
-  { name: "DevHunt", logo: "/sources/devhunt.png" },
-  { name: "MicroLaunch", logo: "/sources/microlaunch.png" },
-  { name: "Peerlist", logo: "/sources/peerlist.png" },
-  { name: "Fazier", logo: "/sources/fazier.png" },
-];
-
 const isCategory = (c: string): c is Category => (CATEGORIES as readonly string[]).includes(c);
 const dayOf = (iso: string) => Math.min(WINDOW, Math.max(1, Math.floor((Date.now() - Date.parse(iso)) / DAY) + 1));
 const daysLeft = (iso: string) => WINDOW - dayOf(iso);
@@ -63,6 +52,7 @@ const replies = (l: Launch) =>
   l.scoreBasis === "maker"
     ? { n: l.makerComments ?? 0, label: "maker replies" }
     : { n: l.commentsCount, label: "comments" };
+const founderLine = (l: Launch) => (l.makers.length ? `by ${l.makers.join(", ")}` : "Founder: see Product Hunt page");
 
 export default function Dashboard() {
   const [launches, setLaunches] = useState<Launch[]>([]);
@@ -72,8 +62,7 @@ export default function Dashboard() {
   const [view, setView] = useState<View>("week");
   const [cat, setCat] = useState<Category | "All">("All");
   const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [panelOpen, setPanelOpen] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
@@ -159,24 +148,16 @@ export default function Dashboard() {
       (cat === "All" || l.category === cat) &&
       (!q || `${l.name} ${l.oneLiner} ${l.tagline} ${l.makers.join(" ")}`.toLowerCase().includes(q))
   );
-  const selected = visible.find((l) => l.id === selectedId) ?? visible[0] ?? null;
+  const opened = launches.find((l) => l.id === openId) ?? null;
   const catCount = (c: Category | "All") => (c === "All" ? viewPool.length : viewPool.filter((l) => l.category === c).length);
   const viewMeta = VIEWS.find((v) => v.id === view)!;
-
-  function select(id: string) {
-    setSelectedId(id);
-    setPanelOpen(true);
-  }
 
   return (
     <div className="app">
       <aside className="side">
         <div className="brand">
           <span className="brand-mark sk" aria-hidden="true">🔭</span>
-          <div>
-            <b>Partnership Scout</b>
-            <small>for Kavya · async standups</small>
-          </div>
+          <b>Partnership Scout</b>
         </div>
 
         <nav className="nav" aria-label="Views">
@@ -196,32 +177,6 @@ export default function Dashboard() {
             </button>
           ))}
         </nav>
-
-        <div className="side-section">
-          <div className="label">Categories</div>
-          <nav className="nav" aria-label="Categories">
-            {CATEGORIES.map((c) => (
-              <button key={c} className="nav-item" aria-pressed={cat === c} onClick={() => setCat(cat === c ? "All" : c)}>
-                <span className="dot" style={{ background: CAT_COLOR[c] }} />
-                {c}
-                <span className="n">{catCount(c)}</span>
-              </button>
-            ))}
-          </nav>
-        </div>
-
-        <div className="side-section sources-section">
-          <div className="label">Where we look</div>
-          <div className="board">
-            {SOURCES.map((s) => (
-              <div key={s.name} className={`tile sk${s.live ? "" : " dim"}`}>
-                <span className={`badge${s.live ? "" : " soon"}`}>{s.live ? "live" : "soon"}</span>
-                <img src={s.logo} alt="" width={26} height={26} />
-                {s.name}
-              </div>
-            ))}
-          </div>
-        </div>
       </aside>
 
       <main className="main">
@@ -279,56 +234,52 @@ export default function Dashboard() {
           </span>
         </div>
 
-        <div className="body">
-          {visible.length === 0 ? (
-            <div className="empty sk">
-              <p>
-                {loading
-                  ? "Loading launches…"
-                  : launches.length === 0
-                    ? "Nothing here yet. Run a scan to pull the last seven days of launches from Product Hunt."
-                    : q
-                      ? `No launches match “${query}”.`
-                      : view === "week" || view === "closing" || view === "hidden"
-                        ? "No launches here right now. Try another category or scan again later."
-                        : `No launches marked “${viewMeta.label}” yet. Open a launch and set its status.`}
-              </p>
-              {!loading && launches.length === 0 && (
-                <button className="btn" onClick={scan} disabled={scanning}>
-                  ↻ Scan Product Hunt now
-                </button>
-              )}
-            </div>
-          ) : (
-            <ol className="list sk">
-              {visible.map((l, i) => (
-                <Row
-                  key={l.id}
-                  launch={l}
-                  rank={i + 1}
-                  status={statusOf(l.id)}
-                  hasNote={!!notes[l.id]}
-                  selected={selected?.id === l.id}
-                  onSelect={() => select(l.id)}
-                />
-              ))}
-            </ol>
-          )}
-
-          {selected && (
-            <Detail
-              key={selected.id}
-              launch={selected}
-              status={statusOf(selected.id)}
-              onStatus={(s) => changeStatus(selected.id, s)}
-              note={notes[selected.id] ?? ""}
-              onNoteSaved={(n) => setNotes((prev) => ({ ...prev, [selected.id]: n }))}
-              open={panelOpen}
-              onClose={() => setPanelOpen(false)}
-            />
-          )}
-        </div>
+        {visible.length === 0 ? (
+          <div className="empty sk">
+            <p>
+              {loading
+                ? "Loading launches…"
+                : launches.length === 0
+                  ? "Nothing here yet. Run a scan to pull the last seven days of launches from Product Hunt."
+                  : q
+                    ? `No launches match “${query}”.`
+                    : view === "week" || view === "closing" || view === "hidden"
+                      ? "No launches here right now. Try another category or scan again later."
+                      : `No launches marked “${viewMeta.label}” yet. Open a launch and set its status.`}
+            </p>
+            {!loading && launches.length === 0 && (
+              <button className="btn" onClick={scan} disabled={scanning}>
+                ↻ Scan Product Hunt now
+              </button>
+            )}
+          </div>
+        ) : (
+          <ol className="list sk">
+            {visible.map((l, i) => (
+              <Row
+                key={l.id}
+                launch={l}
+                rank={i + 1}
+                status={statusOf(l.id)}
+                hasNote={!!notes[l.id]}
+                onOpen={() => setOpenId(l.id)}
+              />
+            ))}
+          </ol>
+        )}
       </main>
+
+      {opened && (
+        <LaunchDialog
+          key={opened.id}
+          launch={opened}
+          status={statusOf(opened.id)}
+          onStatus={(s) => changeStatus(opened.id, s)}
+          note={notes[opened.id] ?? ""}
+          onNoteSaved={(n) => setNotes((prev) => ({ ...prev, [opened.id]: n }))}
+          onClose={() => setOpenId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -379,25 +330,31 @@ function CategoryChip({ launch: l }: { launch: Launch }) {
   return <span className="chip muted">{l.category === "Pending" ? "analysis pending" : "not relevant"}</span>;
 }
 
+function FitBadge({ launch: l }: { launch: Launch }) {
+  return (
+    <span className="fit" data-tone={l.analyzedAt ? fitTone(l.relevance) : "low"}>
+      {l.analyzedAt ? `fit ${l.relevance}/10` : "fit –"}
+    </span>
+  );
+}
+
 function Row({
   launch: l,
   rank,
   status,
   hasNote,
-  selected,
-  onSelect,
+  onOpen,
 }: {
   launch: Launch;
   rank: number;
   status: OutreachStatus;
   hasNote: boolean;
-  selected: boolean;
-  onSelect: () => void;
+  onOpen: () => void;
 }) {
   const r = replies(l);
   return (
     <li>
-      <button className="row" aria-pressed={selected} onClick={onSelect}>
+      <button className="row" aria-haspopup="dialog" onClick={onOpen}>
         <span className="rank">{rank}</span>
         {l.thumbnail ? <img className="thumb" src={l.thumbnail} alt="" /> : <span className="thumb" />}
         <span className="who">
@@ -408,11 +365,9 @@ function Row({
             {hasNote && <span className="note-dot" title="Has notes">✎</span>}
           </span>
           <span className="one">{l.category === "Pending" ? l.tagline : l.oneLiner}</span>
-          <span className="founder">{l.makers.length ? `by ${l.makers.join(", ")}` : "Founder: see Product Hunt page"}</span>
+          <span className="founder">{founderLine(l)}</span>
         </span>
-        <span className="fit" data-tone={l.analyzedAt ? fitTone(l.relevance) : "low"}>
-          {l.analyzedAt ? `fit ${l.relevance}/10` : "fit –"}
-        </span>
+        <FitBadge launch={l} />
         <span className="stat">
           <b>{l.votes}</b>
           <span>upvotes</span>
@@ -427,13 +382,12 @@ function Row({
   );
 }
 
-function Detail({
+function LaunchDialog({
   launch: l,
   status,
   onStatus,
   note,
   onNoteSaved,
-  open,
   onClose,
 }: {
   launch: Launch;
@@ -441,16 +395,22 @@ function Detail({
   onStatus: (s: OutreachStatus) => void;
   note: string;
   onNoteSaved: (n: string) => void;
-  open: boolean;
   onClose: () => void;
 }) {
+  const ref = useRef<HTMLDialogElement>(null);
   const [draft, setDraft] = useState(note);
   const [saveState, setSaveState] = useState("");
   const [copied, setCopied] = useState("");
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const r = replies(l);
+  const founders = l.makerProfiles?.length ? l.makerProfiles : l.makers.map((name) => ({ name, headline: undefined, username: undefined }));
+  const summary = l.summary || l.description || l.tagline;
 
-  useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (dialog && !dialog.open) dialog.showModal();
+    return () => clearTimeout(timer.current);
+  }, []);
 
   function editNote(value: string) {
     setDraft(value);
@@ -478,7 +438,7 @@ function Detail({
       ta.value = l.outreachAngle;
       ta.style.position = "fixed";
       ta.style.opacity = "0";
-      document.body.appendChild(ta);
+      ref.current?.appendChild(ta);
       ta.select();
       ok = document.execCommand("copy");
       ta.remove();
@@ -488,90 +448,128 @@ function Detail({
   }
 
   return (
-    <aside className="detail sk" data-open={open} aria-label={`${l.name} details`}>
-      <button className="close" onClick={onClose} aria-label="Close details">
-        ✕
-      </button>
-      <div className="d-top">
-        {l.thumbnail ? <img src={l.thumbnail} alt="" /> : <span className="thumb" />}
-        <div>
-          <h2>{l.name}</h2>
-          <p>{l.makers.length ? `by ${l.makers.join(", ")}` : "Founder: see Product Hunt page"}</p>
-          <div className="d-chips">
-            <CategoryChip launch={l} />
-            {l.analyzedAt && (
-              <span className="fit" data-tone={fitTone(l.relevance)}>
-                fit {l.relevance}/10
-              </span>
-            )}
+    <dialog
+      ref={ref}
+      className="dialog sk"
+      aria-labelledby={`dialog-title-${l.id}`}
+      onClose={onClose}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) ref.current?.close(); // backdrop click
+      }}
+    >
+      <div className="dialog-body">
+        <button className="close" onClick={() => ref.current?.close()} aria-label="Close">
+          ✕
+        </button>
+
+        <div className="d-top">
+          {l.thumbnail ? <img src={l.thumbnail} alt="" /> : <span className="thumb" />}
+          <div>
+            <h2 id={`dialog-title-${l.id}`}>{l.name}</h2>
+            <div className="d-chips">
+              <CategoryChip launch={l} />
+              <FitBadge launch={l} />
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="status-buttons" role="group" aria-label="Outreach status">
-        {(Object.keys(STATUS_LABEL) as OutreachStatus[]).map((s) => (
-          <button key={s} className={`s-${s}`} aria-pressed={status === s} onClick={() => onStatus(s)}>
-            {STATUS_LABEL[s]}
-          </button>
-        ))}
-      </div>
+        <section className="founders">
+          <h3>{founders.length === 1 ? "Founder" : "Founders"}</h3>
+          {founders.length ? (
+            <ul>
+              {founders.map((f) => (
+                <li key={f.name}>
+                  {f.username ? (
+                    <a href={`https://www.producthunt.com/@${f.username}`} target="_blank" rel="noreferrer">
+                      {f.name}
+                    </a>
+                  ) : (
+                    <b>{f.name}</b>
+                  )}
+                  {f.headline && <span>{f.headline}</span>}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted-text">Product Hunt hides the makers of this launch. See the Product Hunt page.</p>
+          )}
+          {founders.length > 0 && !!l.makersHidden && (
+            <p className="muted-text small">
+              +{l.makersHidden} more maker{l.makersHidden === 1 ? "" : "s"} hidden by Product Hunt.
+            </p>
+          )}
+        </section>
 
-      <div className="d-stats">
-        <div>
-          <b>{l.votes}</b>
-          <span>upvotes</span>
-        </div>
-        <div>
-          <b>{r.n}</b>
-          <span>{r.label}</span>
-        </div>
-        <div>
-          <b>{l.score}</b>
-          <span>score</span>
-        </div>
-      </div>
-
-      <WindowBar launchedAt={l.launchedAt} />
-
-      <div className="angle">
-        <svg className="sparkle" width="30" height="26" viewBox="0 0 30 26" fill="none" stroke="var(--ink)" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
-          <path d="M10 3v10M5 8h10M23 13v8M19 17h8" />
-        </svg>
-        <h3>✦ Outreach angle</h3>
-        {l.outreachAngle ? (
-          <>
-            <p>{l.outreachAngle}</p>
-            <button className="btn" onClick={copyAngle}>
-              {copied || "Copy angle"}
+        <div className="status-buttons" role="group" aria-label="Outreach status">
+          {(Object.keys(STATUS_LABEL) as OutreachStatus[]).map((s) => (
+            <button key={s} className={`s-${s}`} aria-pressed={status === s} onClick={() => onStatus(s)}>
+              {STATUS_LABEL[s]}
             </button>
-          </>
-        ) : (
-          <p className="muted-text">Gemini hasn&apos;t analyzed this launch yet. It will be picked up on the next scan.</p>
-        )}
-      </div>
+          ))}
+        </div>
 
-      <div className="notes">
-        <label htmlFor={`note-${l.id}`}>Your notes</label>
-        <textarea
-          id={`note-${l.id}`}
-          value={draft}
-          onChange={(e) => editNote(e.target.value)}
-          placeholder="Who to contact, where, and what you said…"
-        />
-        <div className="saved" aria-live="polite">
-          {saveState}
+        <div className="d-stats">
+          <div>
+            <b>{l.votes}</b>
+            <span>upvotes</span>
+          </div>
+          <div>
+            <b>{r.n}</b>
+            <span>{r.label}</span>
+          </div>
+          <div>
+            <b>{l.score}</b>
+            <span>score</span>
+          </div>
+        </div>
+
+        <WindowBar launchedAt={l.launchedAt} />
+
+        <section>
+          <h3>Summary</h3>
+          <p className="summary">{summary}</p>
+        </section>
+
+        <div className="angle">
+          <svg className="sparkle" width="30" height="26" viewBox="0 0 30 26" fill="none" stroke="var(--ink)" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+            <path d="M10 3v10M5 8h10M23 13v8M19 17h8" />
+          </svg>
+          <h3>✦ Outreach angle</h3>
+          {l.outreachAngle ? (
+            <>
+              <p>{l.outreachAngle}</p>
+              <button className="btn" onClick={copyAngle}>
+                {copied || "Copy angle"}
+              </button>
+            </>
+          ) : (
+            <p className="muted-text">Gemini hasn&apos;t analyzed this launch yet. It will be picked up on the next scan.</p>
+          )}
+        </div>
+
+        <div className="notes">
+          <label htmlFor={`note-${l.id}`}>Your notes</label>
+          <textarea
+            id={`note-${l.id}`}
+            value={draft}
+            onChange={(e) => editNote(e.target.value)}
+            placeholder="Who to contact, where, and what you said…"
+          />
+          <div className="saved" aria-live="polite">
+            {saveState}
+          </div>
+        </div>
+
+        <div className="links">
+          <a href={l.url} target="_blank" rel="noreferrer">
+            Product Hunt page ↗
+          </a>
+          <a href={l.website} target="_blank" rel="noreferrer">
+            Website ↗
+          </a>
+          <span>Launched {new Date(l.launchedAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</span>
         </div>
       </div>
-
-      <div className="links">
-        <a href={l.url} target="_blank" rel="noreferrer">
-          Product Hunt page ↗
-        </a>
-        <a href={l.website} target="_blank" rel="noreferrer">
-          Website ↗
-        </a>
-        <span>Launched {new Date(l.launchedAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</span>
-      </div>
-    </aside>
+    </dialog>
   );
 }

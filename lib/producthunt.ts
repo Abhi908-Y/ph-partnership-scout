@@ -14,7 +14,7 @@ query RecentByTopic($topic: String, $after: DateTime) {
         votesCount commentsCount makerReplies createdAt featuredAt
         thumbnail { url }
         topics(first: 5) { edges { node { name slug } } }
-        makers { id name username }
+        makers { id name username headline }
       }
     }
   }
@@ -44,7 +44,15 @@ const isRedacted = (s?: string | null) => !s || /redacted/i.test(s);
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function toRaw(n: any): RawPost {
-  const makers: string[] = (n.makers ?? []).map((m: any) => m?.name).filter((name: string) => !isRedacted(name));
+  const allMakers: any[] = n.makers ?? [];
+  const makerProfiles = allMakers
+    .filter((m) => !isRedacted(m?.name))
+    .map((m) => ({
+      name: String(m.name),
+      headline: isRedacted(m.headline) ? undefined : m.headline ?? undefined,
+      username: isRedacted(m.username) ? undefined : m.username ?? undefined,
+    }));
+  const makers = makerProfiles.map((m) => m.name);
   // Per the brief: when Product Hunt hides every maker name, score with total comments instead.
   const makerComments = makers.length && typeof n.makerReplies === "number" ? n.makerReplies : null;
   return {
@@ -59,6 +67,8 @@ function toRaw(n: any): RawPost {
     commentsCount: n.commentsCount ?? 0,
     makerComments,
     makers,
+    makerProfiles,
+    makersHidden: allMakers.length - makerProfiles.length,
     topics: (n.topics?.edges ?? []).map((e: any) => e.node.name),
     launchedAt: n.featuredAt ?? n.createdAt,
   };

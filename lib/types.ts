@@ -26,6 +26,10 @@ export interface RawPost {
   makerComments: number | null;
   /** Visible maker names; redacted ones are dropped. */
   makers: string[];
+  /** Visible makers with their Product Hunt headline (role) and username, for the detail view. */
+  makerProfiles?: { name: string; headline?: string; username?: string }[];
+  /** Makers whose identity Product Hunt redacted. */
+  makersHidden?: number;
   topics: string[];
   launchedAt: string;
 }
@@ -33,6 +37,8 @@ export interface RawPost {
 export interface Launch extends RawPost {
   category: Classification;
   oneLiner: string;
+  /** Gemini's 2-sentence summary of what the product does and who it's for. */
+  summary?: string;
   outreachAngle: string;
   relevance: number;
   score: number;

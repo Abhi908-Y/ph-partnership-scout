@@ -6,6 +6,7 @@ export interface Analysis {
   category: string;
   relevance: number;
   oneLiner: string;
+  summary: string;
   outreachAngle: string;
 }
 
@@ -18,9 +19,10 @@ const SCHEMA = {
       category: { type: "STRING", enum: [...CATEGORIES, "Not relevant"] },
       relevance: { type: "INTEGER" },
       oneLiner: { type: "STRING" },
+      summary: { type: "STRING" },
       outreachAngle: { type: "STRING" },
     },
-    required: ["id", "category", "relevance", "oneLiner", "outreachAngle"],
+    required: ["id", "category", "relevance", "oneLiner", "summary", "outreachAngle"],
   },
 };
 
@@ -52,6 +54,7 @@ For each Product Hunt launch below, return:
 - category: one of the four categories, or "Not relevant" if it is not a tool used by teams at work
 - relevance: integer 0-10, how strong a partnership fit it is for an async standup tool
 - oneLiner: one plain sentence, at most 20 words, saying what the product does
+- summary: two plain sentences: what the product does, and who it is for. No marketing language.
 - outreachAngle: 1-2 sentences Kavya can use as her opening hook. Name a concrete way her async standup tool complements theirs (an integration, a data hand-off, a bundle, co-marketing to a shared audience). Be specific to this product. No flattery, no generic "let's collaborate".
 
 Launches:
