@@ -11,6 +11,7 @@ import {
   type OutreachStatus,
 } from "@/lib/types";
 import { bandFor, DEFAULT_RUBRIC, scoreBreakdown, scoreWith, type Rubric } from "@/lib/rubric";
+import { linkedinSearchUrl } from "@/lib/linkedin";
 import { roleOf } from "@/lib/roles";
 import { scanNow } from "./actions";
 
@@ -757,6 +758,7 @@ function ReachOut({
             <FounderCard
               key={f.name}
               founder={f}
+              launchName={l.name}
               config={config}
               busy={busy}
               composer={composer?.name === f.name ? composer.mode : null}
@@ -791,6 +793,7 @@ function ReachOut({
 
 function FounderCard({
   founder: f,
+  launchName,
   config,
   busy,
   composer,
@@ -801,6 +804,7 @@ function FounderCard({
   copy,
 }: {
   founder: FounderContact;
+  launchName: string;
   config: OutreachConfig | null;
   busy: string;
   composer: Composer["mode"] | null;
@@ -827,11 +831,14 @@ function FounderCard({
   const emailLabel = f.emailKind === "company" ? "company email" : null;
   // In test mode every email goes to the test inbox, so a draft can be sent even without a founder email.
   const canEmail = !!config?.resend && (!!f.email || !!config?.testTo);
+  // Unconfirmed founders get a Google search for their LinkedIn (older lookups stored a LinkedIn
+  // people-search link, which needs a login and usually came back empty).
+  const linkedinHref = f.linkedinIsSearch || !f.linkedin ? linkedinSearchUrl(f.name, launchName) : f.linkedin;
 
   async function copyAndOpen() {
     const ok = await copy(note);
     setCopied(ok);
-    if (f.linkedin) window.open(f.linkedin, "_blank", "noopener,noreferrer");
+    window.open(linkedinHref, "_blank", "noopener,noreferrer");
   }
 
   return (
@@ -860,13 +867,9 @@ function FounderCard({
         </span>
         <span>
           <span className="ico li" aria-hidden="true">in</span>
-          {f.linkedin ? (
-            <a href={f.linkedin} target="_blank" rel="noreferrer">
-              {f.linkedinIsSearch ? "Search LinkedIn ↗" : "LinkedIn profile ↗"}
-            </a>
-          ) : (
-            <span className="muted-text">No LinkedIn found</span>
-          )}
+          <a href={linkedinHref} target="_blank" rel="noreferrer">
+            {f.linkedinIsSearch || !f.linkedin ? "No confirmed profile · search Google ↗" : "LinkedIn profile ↗"}
+          </a>
         </span>
       </div>
 

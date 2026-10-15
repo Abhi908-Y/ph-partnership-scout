@@ -1,4 +1,5 @@
 import { MY_PRODUCT, WINDOW_DAYS } from "./config";
+import { brandWords, confirmedProfile, linkedinSearchUrl } from "./linkedin";
 import { chat, chatJson, parseJson } from "./llm";
 import { roleOf } from "./roles";
 import type { ContactsRecord, FounderContact, Launch, OutreachConfig, OutreachDraft } from "./types";
@@ -35,8 +36,7 @@ export async function resolveDomain(website: string): Promise<string | null> {
   return null;
 }
 
-const linkedinSearch = (name: string, company: string) =>
-  `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(`${name} ${company}`)}`;
+const linkedinSearch = linkedinSearchUrl;
 
 const WEBMAIL = /^(gmail|googlemail|yahoo|outlook|hotmail|live|icloud|proton|protonmail|aol)\./;
 const words = (s: string) => s.toLowerCase().normalize("NFD").replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length >= 4);
@@ -77,13 +77,10 @@ async function searchFounder(name: string, role: string, launch: Launch, domain:
   } catch {
     // Unparseable reply: fall through with nothing found.
   }
-  const urls = citations.map((c) => c.url.toLowerCase());
   const corpus = citations.map((c) => `${c.url} ${c.title ?? ""} ${c.content ?? ""}`).join("\n").toLowerCase();
   const nameParts = words(name);
 
-  const handle = found.linkedin?.match(/linkedin\.com\/in\/([^/?#\s]+)/i)?.[1];
-  const linkedin =
-    handle && urls.some((u) => u.includes(`/in/${handle.toLowerCase()}`)) ? `https://www.linkedin.com/in/${handle}` : undefined;
+  const linkedin = confirmedProfile(found.linkedin, name, brandWords(launch.name, domain), citations);
 
   const seen = (email: string) => (corpus.trim() ? corpus.includes(email.toLowerCase()) : true);
   const valid = (email?: string | null) => (email && /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(email) ? email.trim() : null);
