@@ -16,7 +16,7 @@ Exam project (MESA Cohort C4, Case 4). Kavya leads partnerships at an async-stan
 
 ## Flow
 `/api/scan` → `lib/scan.ts`: fetch PH (`lib/producthunt.ts`) → merge with Neon → score → drop launches older than 7 days → Gemini analysis (`lib/gemini.ts`, max 80 per scan, batches of 8, 4 in parallel) → Telegram digest (fit ≥ 5 only) → save.
-Dashboard `app/dashboard.tsx` (client, wrapped by `app/page.tsx`; sketchbook theme in `app/globals.css`, Inter via next/font) reads `/api/launches`, saves notes via `PUT /api/notes` and outreach status via `PUT /api/status`.
+Dashboard `app/dashboard.tsx` (client, wrapped by `app/page.tsx`; sketchbook theme in `app/globals.css`, Inter via next/font) reads `/api/launches`, saves notes via `PUT /api/notes`, outreach status via `PUT /api/status` and bookmarks via `PUT /api/bookmarks`. Bookmarked launches (Neon `bookmarks` table) are never deleted by the scan, so they stay in the Saved tab after their 7-day window; other views only show launches inside the window.
 
 ## Scoring
 Rubric lives in `lib/rubric.ts` (defaults) and Neon `meta` key `rubric`, edited via the dashboard and `PUT /api/rubric`. Default `score = 1 × upvotes + 5 × makerComments` (makerComments = PH `makerReplies`); if PH redacts every maker name, makerComments is null, the founder shows as "see Product Hunt page", and the comments weight applies to `commentsCount` (`scoreBasis: "all"`). The dashboard re-ranks client-side with `scoreWith`. Changing fit-band text bumps `rubric.version`; scans re-analyze launches whose `rubricVersion` is older. Telegram uses `rubric.minAlertFit`.

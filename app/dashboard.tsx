@@ -38,9 +38,10 @@ const STATUS_LABEL: Record<OutreachStatus, string> = {
   partner: "Partner",
 };
 
-type View = "week" | "closing" | "contacted" | "replied" | "partner" | "hidden";
+type View = "week" | "saved" | "closing" | "contacted" | "replied" | "partner" | "hidden";
 const VIEWS: { id: View; icon: string; label: string; title: [string, string] }[] = [
   { id: "week", icon: "📌", label: "This week", title: ["This week's", "launch scout"] },
+  { id: "saved", icon: "🔖", label: "Saved", title: ["Your", "saved companies"] },
   { id: "closing", icon: "⏳", label: "Closing soon", title: ["Closing", "in 2 days or less"] },
   { id: "contacted", icon: "✉️", label: "Contacted", title: ["Founders you've", "contacted"] },
   { id: "replied", icon: "💬", label: "Replied", title: ["Founders who", "replied"] },
@@ -51,6 +52,8 @@ const VIEWS: { id: View; icon: string; label: string; title: [string, string] }[
 const isCategory = (c: string): c is Category => (CATEGORIES as readonly string[]).includes(c);
 const dayOf = (iso: string) => Math.min(WINDOW, Math.max(1, Math.floor((Date.now() - Date.parse(iso)) / DAY) + 1));
 const daysLeft = (iso: string) => WINDOW - dayOf(iso);
+/** Still inside the 7-day outreach window (saved launches are kept after it closes). */
+const isOpen = (iso: string) => Date.now() - Date.parse(iso) < WINDOW * DAY;
 const timeAgo = (iso: string) => {
   const m = Math.round((Date.now() - Date.parse(iso)) / 60_000);
   if (m < 1) return "just now";
@@ -94,6 +97,7 @@ export default function Dashboard() {
   const [launches, setLaunches] = useState<Launch[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [statuses, setStatuses] = useState<Record<string, OutreachStatus>>({});
+  const [bookmarks, setBookmarks] = useState<string[]>([]);
   const [lastScan, setLastScan] = useState<string | null>(null);
   const [view, setView] = useState<View>("week");
   const [cat, setCat] = useState<Category | "All">("All");
@@ -113,6 +117,7 @@ export default function Dashboard() {
       setLaunches(data.launches);
       setNotes(data.notes);
       setStatuses(data.statuses ?? {});
+      setBookmarks(data.bookmarks ?? []);
       setLastScan(data.lastScan);
       if (data.rubric) setRubric(data.rubric);
     } catch (err) {
@@ -166,23 +171,43 @@ export default function Dashboard() {
     }
   }
 
+  async function toggleBookmark(id: string) {
+    const saving = !bookmarks.includes(id);
+    setBookmarks((b) => (saving ? [id, ...b] : b.filter((x) => x !== id)));
+    const res = await fetch("/api/bookmarks", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, saved: saving }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      setBookmarks((b) => (saving ? b.filter((x) => x !== id) : [id, ...b]));
+      setMessage("Couldn't update your saved companies. Check your connection and try again.");
+    }
+  }
+
   const statusOf = useCallback((id: string) => statuses[id] ?? "new", [statuses]);
-  const relevant = useMemo(() => launches.filter((l) => l.category !== "Not relevant"), [launches]);
+  const savedSet = useMemo(() => new Set(bookmarks), [bookmarks]);
+  const relevant = useMemo(
+    () => launches.filter((l) => l.category !== "Not relevant" && isOpen(l.launchedAt)),
+    [launches]
+  );
 
   const inView = useCallback(
     (l: Launch, v: View) => {
       switch (v) {
         case "week":
-          return l.category !== "Not relevant";
+          return l.category !== "Not relevant" && isOpen(l.launchedAt);
+        case "saved":
+          return savedSet.has(l.id);
         case "closing":
-          return l.category !== "Not relevant" && daysLeft(l.launchedAt) <= 2;
+          return l.category !== "Not relevant" && isOpen(l.launchedAt) && daysLeft(l.launchedAt) <= 2;
         case "hidden":
-          return l.category === "Not relevant";
+          return l.category === "Not relevant" && isOpen(l.launchedAt);
         default:
           return statusOf(l.id) === v;
       }
     },
-    [statusOf]
+    [statusOf, savedSet]
   );
 
   const viewPool = useMemo(() => launches.filter((l) => inView(l, view)), [launches, view, inView]);
@@ -294,9 +319,11 @@ export default function Dashboard() {
                   ? "Nothing here yet. Run a scan to pull the last seven days of launches from Product Hunt."
                   : q
                     ? `No launches match “${query}”.`
-                    : view === "week" || view === "closing" || view === "hidden"
-                      ? "No launches here right now. Try another category or scan again later."
-                      : `No launches marked “${viewMeta.label}” yet. Open a launch and set its status.`}
+                    : view === "saved"
+                      ? "No saved companies yet. Click the bookmark on any launch to save it here. Saved companies stay even after their 7 days."
+                      : view === "week" || view === "closing" || view === "hidden"
+                        ? "No launches here right now. Try another category or scan again later."
+                        : `No launches marked “${viewMeta.label}” yet. Open a launch and set its status.`}
             </p>
             {!loading && launches.length === 0 && (
               <button className="btn" onClick={scan} disabled={scanning}>
@@ -313,6 +340,8 @@ export default function Dashboard() {
                 rank={i + 1}
                 status={statusOf(l.id)}
                 hasNote={!!notes[l.id]}
+                saved={savedSet.has(l.id)}
+                onToggleSave={() => toggleBookmark(l.id)}
                 onOpen={() => setOpenId(l.id)}
               />
             ))}
@@ -333,6 +362,8 @@ export default function Dashboard() {
           }
           onClose={() => setOpenId(null)}
           rubric={rubric}
+          saved={savedSet.has(opened.id)}
+          onToggleSave={() => toggleBookmark(opened.id)}
         />
       )}
 
@@ -370,11 +401,20 @@ function Rocket() {
   );
 }
 
+function BookmarkIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill={filled ? "var(--ink)" : "none"} stroke="var(--ink)" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6 3h12v18l-6-4-6 4z" />
+    </svg>
+  );
+}
+
 function WindowBar({ launchedAt, compact }: { launchedAt: string; compact?: boolean }) {
   const day = dayOf(launchedAt);
   const left = WINDOW - day;
-  const tone = left === 0 ? "hot" : left <= 2 ? "warn" : "ok";
-  const label = left === 0 ? "last day!" : `${left} day${left === 1 ? "" : "s"} left`;
+  const closed = !isOpen(launchedAt);
+  const tone = closed ? "closed" : left === 0 ? "hot" : left <= 2 ? "warn" : "ok";
+  const label = closed ? "window closed" : left === 0 ? "last day!" : `${left} day${left === 1 ? "" : "s"} left`;
   return (
     <div className="window" data-tone={tone} aria-label={`Day ${day} of ${WINDOW}, ${label}`}>
       <div className="segs" aria-hidden="true">
@@ -414,17 +454,30 @@ function Row({
   rank,
   status,
   hasNote,
+  saved,
+  onToggleSave,
   onOpen,
 }: {
   launch: Launch;
   rank: number;
   status: OutreachStatus;
   hasNote: boolean;
+  saved: boolean;
+  onToggleSave: () => void;
   onOpen: () => void;
 }) {
   const r = replies(l);
   return (
-    <li>
+    <li className="row-item">
+      <button
+        className={`bm${saved ? " on" : ""}`}
+        onClick={onToggleSave}
+        aria-pressed={saved}
+        aria-label={saved ? `Remove ${l.name} from saved` : `Save ${l.name}`}
+        title={saved ? "Saved · click to remove" : "Save this company"}
+      >
+        <BookmarkIcon filled={saved} />
+      </button>
       <button className="row" aria-haspopup="dialog" onClick={onOpen}>
         <span className="rank">{rank}</span>
         {l.thumbnail ? <img className="thumb" src={l.thumbnail} alt="" /> : <span className="thumb" />}
@@ -462,6 +515,8 @@ function LaunchDialog({
   onContacted,
   onClose,
   rubric,
+  saved,
+  onToggleSave,
 }: {
   launch: Launch;
   status: OutreachStatus;
@@ -471,6 +526,8 @@ function LaunchDialog({
   onContacted: () => void;
   onClose: () => void;
   rubric: Rubric;
+  saved: boolean;
+  onToggleSave: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [draft, setDraft] = useState(note);
@@ -534,6 +591,10 @@ function LaunchDialog({
               <FitBadge launch={l} />
             </div>
           </div>
+          <button className={`save-btn${saved ? " on" : ""}`} onClick={onToggleSave} aria-pressed={saved}>
+            <BookmarkIcon filled={saved} />
+            {saved ? "Saved" : "Save"}
+          </button>
         </div>
 
         <section className="founders">

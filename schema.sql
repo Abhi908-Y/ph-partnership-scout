@@ -25,3 +25,7 @@ CREATE TABLE IF NOT EXISTS contacts (
   data JSONB NOT NULL, -- founders' emails/LinkedIn (Hunter), drafts, sent log
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS bookmarks (
+  launch_id TEXT PRIMARY KEY, -- saved launches are kept after their 7-day window
+  created_at TIMESTAMPTZ DEFAULT now()
+);

@@ -26,6 +26,8 @@ async function sql(text: string, params: unknown[] = []) {
       launch_id TEXT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT now())`);
     await q.query(`CREATE TABLE IF NOT EXISTS statuses (
       launch_id TEXT PRIMARY KEY, status TEXT NOT NULL, updated_at TIMESTAMPTZ DEFAULT now())`);
+    await q.query(`CREATE TABLE IF NOT EXISTS bookmarks (
+      launch_id TEXT PRIMARY KEY, created_at TIMESTAMPTZ DEFAULT now())`);
   })().catch((err) => { ready = null; throw err; });
   await ready;
   return (await q.query(text, params)) as Record<string, unknown>[];
@@ -70,6 +72,17 @@ export async function saveNote(id: string, note: string) {
   } else {
     await sql(`DELETE FROM notes WHERE launch_id = $1`, [id]);
   }
+}
+
+/** Bookmarked launch ids, newest first. Bookmarked launches are kept after their 7-day window. */
+export async function getBookmarks(): Promise<string[]> {
+  const rows = await sql(`SELECT launch_id FROM bookmarks ORDER BY created_at DESC`);
+  return rows.map((r) => String(r.launch_id));
+}
+
+export async function setBookmark(id: string, saved: boolean) {
+  if (saved) await sql(`INSERT INTO bookmarks (launch_id) VALUES ($1) ON CONFLICT (launch_id) DO NOTHING`, [id]);
+  else await sql(`DELETE FROM bookmarks WHERE launch_id = $1`, [id]);
 }
 
 export async function getStatuses(): Promise<Record<string, OutreachStatus>> {

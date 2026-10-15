@@ -4,6 +4,7 @@ import { fetchRecentLaunches } from "./producthunt";
 import { scoreWith, type Rubric } from "./rubric";
 import {
   acquireScanLock,
+  getBookmarks,
   getLastScan,
   getLaunches,
   getRubric,
@@ -77,9 +78,12 @@ async function scanOnce(): Promise<ScanResult> {
     }
   }
 
-  // Drop anything outside the outreach window.
-  const expired = [...all.values()].filter((l) => daysSince(l.launchedAt) >= WINDOW_DAYS).map((l) => l.id);
-  expired.forEach((id) => all.delete(id));
+  // Drop anything outside the outreach window from this scan. Bookmarked launches stay in the
+  // database (untouched, not re-scored or re-alerted) so they remain in Kavya's Saved tab.
+  const bookmarked = new Set(await getBookmarks());
+  const outOfWindow = [...all.values()].filter((l) => daysSince(l.launchedAt) >= WINDOW_DAYS).map((l) => l.id);
+  outOfWindow.forEach((id) => all.delete(id));
+  const expired = outOfWindow.filter((id) => !bookmarked.has(id));
 
   // Analyze with Gemini: new launches first, then ones scored under an older rubric (or before
   // summaries existed), highest score first within each group.

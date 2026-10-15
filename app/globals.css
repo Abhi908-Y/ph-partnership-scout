@@ -261,3 +261,27 @@ a { color: var(--ink); }
 .band { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 10px; align-items: start; }
 .band-range { font-weight: 700; font-size: 13px; border: 1.4px solid var(--ink); border-radius: 8px; background: var(--hl-soft); text-align: center; padding: 6px 0; }
 .band textarea { resize: vertical; }
+
+/* Saved companies (bookmarks) */
+.row-item { position: relative; }
+.row-item .row { padding-right: 66px; }
+.bm {
+  position: absolute; right: 16px; top: 50%; transform: translateY(-50%); z-index: 1;
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border: 1.5px solid var(--ink); border-radius: 9px; background: #fff; box-shadow: 2px 2px 0 var(--ink);
+}
+.bm:hover { background: var(--hl-soft); }
+.bm.on { background: var(--hl); }
+.bm:active { transform: translateY(calc(-50% + 1px)); box-shadow: 1px 1px 0 var(--ink); }
+.save-btn {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+  font-weight: 700; font-size: 13px; padding: 7px 12px; border: 1.5px solid var(--ink); border-radius: 10px;
+  background: #fff; box-shadow: 2px 2px 0 var(--ink);
+}
+.save-btn.on { background: var(--hl); }
+.window[data-tone="closed"] .seg.used { background: #c9c3b6; }
+.window[data-tone="closed"] .left { color: var(--ink3); font-style: italic; }
+@media (max-width: 860px) {
+  .row-item .row { padding-right: 58px; }
+  .bm { right: 10px; width: 32px; height: 32px; }
+}
