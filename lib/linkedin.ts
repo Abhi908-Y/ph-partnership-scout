@@ -1,11 +1,12 @@
 // LinkedIn helpers shared by the server (lookup) and the dashboard (fallback links).
 
 /**
- * Fallback when no profile could be confirmed: a Google search for the person's LinkedIn. LinkedIn's own
- * people search needs a login and returns nothing when the (days-old) product name is in the query.
+ * Fallback when no profile could be confirmed: LinkedIn's people search for the name alone. Adding the
+ * (days-old) product name made it return nobody, since founders rarely list a brand-new product.
+ * `company` is kept in the signature for callers but deliberately left out of the query.
  */
-export function linkedinSearchUrl(name: string, company: string): string {
-  return `https://www.google.com/search?q=${encodeURIComponent(`"${name}" ${company} linkedin`)}`;
+export function linkedinSearchUrl(name: string, _company?: string): string {
+  return `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(name.trim())}`;
 }
 
 /** Lowercase, accent-free words, for comparing names and titles. */

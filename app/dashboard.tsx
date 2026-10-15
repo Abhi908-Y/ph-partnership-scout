@@ -831,8 +831,8 @@ function FounderCard({
   const emailLabel = f.emailKind === "company" ? "company email" : null;
   // In test mode every email goes to the test inbox, so a draft can be sent even without a founder email.
   const canEmail = !!config?.resend && (!!f.email || !!config?.testTo);
-  // Unconfirmed founders get a Google search for their LinkedIn (older lookups stored a LinkedIn
-  // people-search link, which needs a login and usually came back empty).
+  // Unconfirmed founders get a LinkedIn people search for their name only (older lookups stored a
+  // search that also included the product name, which usually came back empty).
   const linkedinHref = f.linkedinIsSearch || !f.linkedin ? linkedinSearchUrl(f.name, launchName) : f.linkedin;
 
   async function copyAndOpen() {
@@ -868,7 +868,7 @@ function FounderCard({
         <span>
           <span className="ico li" aria-hidden="true">in</span>
           <a href={linkedinHref} target="_blank" rel="noreferrer">
-            {f.linkedinIsSearch || !f.linkedin ? "No confirmed profile · search Google ↗" : "LinkedIn profile ↗"}
+            {f.linkedinIsSearch || !f.linkedin ? "No confirmed profile · search LinkedIn ↗" : "LinkedIn profile ↗"}
           </a>
         </span>
       </div>
