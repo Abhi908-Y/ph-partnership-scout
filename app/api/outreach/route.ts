@@ -28,6 +28,13 @@ export async function POST(req: Request) {
 
     if (body.action === "find") {
       const contacts = await findContacts(launch);
+      // A repeat lookup refreshes LinkedIn/email but keeps each founder's drafts and sent history,
+      // so "Look up again" can't erase the record that blocks a second email to the same founder.
+      const previous = await getContacts(launch.id);
+      for (const f of contacts.founders) {
+        const old = previous?.founders.find((p) => p.name === f.name);
+        if (old) Object.assign(f, { draft: old.draft, sentAt: old.sentAt, sentTo: old.sentTo, sentSubject: old.sentSubject });
+      }
       await saveContacts(launch.id, contacts);
       return NextResponse.json({ contacts });
     }
